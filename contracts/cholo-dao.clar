@@ -1,12 +1,12 @@
 ;; title: CHOLO DAO
 ;; version: 2.0.1
-;; summary: Tesorería multisig para CHOLO DAO en Stacks, con gestión dinámica de signers.
-;; description: Contrato multisig que almacena fondos y permite agregar, remover o reemplazar signers mediante propuestas y votos.
+;; summary: Multisig treasury for CHOLO DAO on Stacks, with dynamic signer management.
+;; description: Multisig contract that holds funds and allows adding, removing, or replacing signers via proposals and votes.
 
 ;; Dynamic signer set
 (define-map signers {idx: uint} principal)
 (define-data-var signer-count uint u0)
-(define-data-var required-sigs uint u3)
+(define-data-var required-sigs uint u3) ;; legacy var kept for compatibility; computed dynamically instead
 (define-constant MIN_SIGNERS uint u3)
 
 ;; Error Codes
@@ -27,22 +27,22 @@
 
 (define-data-var next-id uint u0)
 
-;; Inicialización de signers 
+;; Initial signers setup
 (begin
   (map-set signers {idx: u0} 'SP193GXQTNHVV9WSAPHAB89M6R9QSEXZKS3774CMD) ;; @fabohax
   (map-set signers {idx: u1} 'ST2YDY8H45J5HTN5M0H2XQH0JFCR4RWCA92QCZ7W6) ;; @anthozg
   (map-set signers {idx: u2} 'ST4ZB0M2ZKP1HRZPVAPE4X14K689X22N29YQQBG2) ;; @sirohxi
   (map-set signers {idx: u3} 'ST9E6QNWPX7WVYJWTDAJ4WMXDNFHFSFKF91N68Z7) ;; @navynox
   (map-set signers {idx: u4} 'SP3KR4YF7YRCMP1XGQ7T5Q2AV2CV6EYE3AGSB27ES) ;; @marsetti
-  (var-set signer-count u5) ;; inicializar contador
+  (var-set signer-count u5) ;; initialize signer count
 )
 
-;; Depositar STX al contrato
+;; Deposit STX into the contract
 (define-public (deposit (amount uint))
   (stx-transfer? amount tx-sender (as-contract tx-sender))
 )
 
-;; Crear propuesta
+;; Create a proposal
 (define-public (create-proposal (recipient principal) (amount uint) (proposal-type (string-ascii 16)) (new-signer (optional principal)) (old-signer (optional principal)) (token (optional principal)) (description (string-utf8 256)) (expiration uint))
   (begin
     (asserts! (is-signer tx-sender) ERR_NOT_SIGNER)
@@ -64,7 +64,7 @@
   )
 )
 
-;; Aprobar propuesta
+;; Approve a proposal
 (define-public (approve-proposal (id uint))
   (let ((prop (map-get? proposals {id: id})))
     (match prop
@@ -92,7 +92,7 @@
   )
 )
 
-;; Helper: check if principal is a signer
+;; Helper: check if a principal is a signer
 (define-read-only (is-signer (who principal))
   (let ((count (var-get signer-count)))
     (let loop ((i u0))
@@ -103,13 +103,13 @@
             none (loop (+ i u1)))))))
 )
 
-;; Ejecutar propuesta si alcanza quorum
+;; Execute a proposal if it reaches quorum
 (define-public (execute-proposal (id uint))
   (let ((prop (map-get? proposals {id: id})))
     (match prop
       proposal
       (begin
-        (asserts! (>= (get approvals proposal) (var-get required-sigs)) ERR_NOT_ENOUGH_APPROVALS)
+  (asserts! (>= (get approvals proposal) (compute-required-sigs)) ERR_NOT_ENOUGH_APPROVALS)
         (asserts! (not (get executed proposal)) ERR_ALREADY_EXECUTED)
         (asserts! (> (get expiration proposal) block-height) ERR_PROPOSAL_EXPIRED)
         (map-set proposals {id: id}
@@ -144,7 +144,7 @@
   )
 )
 
-;; SIP-010 token transfer helper con validación
+;; SIP-010 token transfer helper with validation
 (define-private (token-transfer (token-contract (optional principal)) (amount uint) (recipient principal))
   (match token-contract
     some-token
@@ -155,17 +155,22 @@
             err-val (err err-val))))
     none (ok false)))
 
-;; Agregar un signer
+;; Add a signer
 (define-private (add-signer (new (optional principal)))
   (match new
     some-new
       (let ((count (var-get signer-count)))
-        (map-set signers {idx: count} some-new)
-        (var-set signer-count (+ count u1))
-        (ok true))
+        ;; Prevent adding duplicates
+        (match (find-signer-index some-new)
+          some-idx (ok false)
+          none
+            (begin
+              (map-set signers {idx: count} some-new)
+              (var-set signer-count (+ count u1))
+              (ok true))))
     none (ok false)))
 
-;; Remover un signer
+;; Remove a signer
 (define-private (remove-signer (old (optional principal)))
   (match old
     some-old
@@ -182,7 +187,7 @@
             none (ok false))))
     none (ok false)))
 
-;; Reemplazar un signer
+;; Replace a signer
 (define-private (replace-signer (old (optional principal)) (new (optional principal)))
   (match old
     some-old
@@ -229,8 +234,20 @@
 (define-read-only (get-signer-count)
   (var-get signer-count))
 
+(define-private (compute-required-sigs)
+  ;; Compute 51% of signers, rounding up. Returns at least 1 for non-zero signers.
+  (let ((count (var-get signer-count)))
+    (if (<= count u0)
+        u0
+        (let ((num (* count u51))
+              (base u0))
+          (let ((base (/ num u100)) (rem (mod num u100)))
+            (let ((res (if (> rem u0) (+ base u1) base)))
+              ;; Ensure at least 1 required sig when count > 0
+              (if (> res u0) res u1))))))
+
 (define-read-only (get-required-sigs)
-  (var-get required-sigs))
+  (compute-required-sigs))
 
 (define-read-only (get-signer (idx uint))
   (map-get? signers {idx: idx}))
