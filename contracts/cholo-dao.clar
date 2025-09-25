@@ -33,7 +33,7 @@
   (map-set signers {idx: u1} 'ST2YDY8H45J5HTN5M0H2XQH0JFCR4RWCA92QCZ7W6) ;; @anthozg
   (map-set signers {idx: u2} 'ST4ZB0M2ZKP1HRZPVAPE4X14K689X22N29YQQBG2) ;; @sirohxi
   (map-set signers {idx: u3} 'ST9E6QNWPX7WVYJWTDAJ4WMXDNFHFSFKF91N68Z7) ;; @navynox
-  (map-set signers {idx: u4} 'SP555555555555555555555555555555555555555) ;; @marsetti
+  (map-set signers {idx: u4} 'SP3KR4YF7YRCMP1XGQ7T5Q2AV2CV6EYE3AGSB27ES) ;; @marsetti
   (var-set signer-count u5) ;; inicializar contador
 )
 
@@ -204,10 +204,9 @@
     (let loop ((i u0))
       (if (>= i count)
           none
-          (let ((current (default-to 'SP193GXQTNHVV9WSAPHAB89M6R9QSEXZKS3774CMD (map-get? signers {idx: i}))))
-            (if (is-eq current target)
-                (some i)
-                (loop (+ i u1))))))))
+          (match (map-get? signers {idx: i})
+            signer (if (is-eq signer target) (some i) (loop (+ i u1)))
+            none (loop (+ i u1)))))))
 
 ;; Helper function to compact signers array after removal
 (define-private (compact-signers (removed-idx uint))
@@ -215,10 +214,16 @@
     (let loop ((i removed-idx))
       (if (>= i (- count u1))
           (map-delete signers {idx: (- count u1)})
-          (let ((next-signer (default-to 'SP193GXQTNHVV9WSAPHAB89M6R9QSEXZKS3774CMD (map-get? signers {idx: (+ i u1)}))))
-            (begin
-              (map-set signers {idx: i} next-signer)
-              (loop (+ i u1))))))))
+          (match (map-get? signers {idx: (+ i u1)})
+            next-signer
+              (begin
+                (map-set signers {idx: i} next-signer)
+                (loop (+ i u1)))
+            none
+              (begin
+                ;; If the next index is missing, delete current and continue
+                (map-delete signers {idx: i})
+                (loop (+ i u1))))))))
 
 ;; Read-only functions for querying contract state
 (define-read-only (get-signer-count)
