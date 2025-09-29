@@ -1,6 +1,6 @@
 [project]
 name = "cholo"
-description = ""
+description = "first latin memecoin on Stacks"
 authors = []
 telemetry = true
 cache_dir = "./.cache"
@@ -12,5 +12,11 @@ check_checker = { trusted_sender = false, trusted_caller = false, callee_filter 
 
 [contracts.cholo]
 path = "contracts/cholo.clar"
+clarity_version = 2
+epoch = 2.4
+
+
+[contracts.cholo-dao]
+path = "contracts/cholo-dao.clar"
 clarity_version = 2
 epoch = 2.4
