@@ -1,5 +1,5 @@
 ;; title: CHOLO
-;; version: 1.1.0
+;; version: 1.0.0
 ;; summary: $CHOLO is a fungible token with a fixed supply of 8,000,000,000.
 ;; description: $CHOLO is the first memecoin created in LATAM anchored to Bitcoin L2 Stacks.
 ;; Complies with SIP-010 standard with no external dependencies.

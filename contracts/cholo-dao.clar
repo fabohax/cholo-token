@@ -1,5 +1,5 @@
 ;; title: CHOLO DAO
-;; version: 2.1.0
+;; version: 1.0.0
 ;; summary: Multisig treasury for CHOLO DAO on Stacks, with timelock, events and safer signer indexing.
 ;; description: Holds funds and executes actions via proposals approved by a dynamic signer set.
 
@@ -82,7 +82,7 @@
   (map-set signers {idx: u3} 'ST9E6QNWPX7WVYJWTDAJ4WMXDNFHFSFKF91N68Z7) ;; @navynox
   (map-set signer-index {signer: 'ST9E6QNWPX7WVYJWTDAJ4WMXDNFHFSFKF91N68Z7} {idx: u3})
 
-  (map-set signers {idx: u4} 'SP3KR4YF7YRCMP1XGQ7T5Q2AV2CV6EYE3AGSB27ES) ;; @pmarsetti
+  (map-set signers {idx: u4} 'SP3KR4YF7YRCMP1XGQ7T5Q2AV2CV6EYE3AGSB27ES) ;; @marsettil
   (map-set signer-index {signer: 'SP3KR4YF7YRCMP1XGQ7T5Q2AV2CV6EYE3AGSB27ES} {idx: u4})
 
   (var-set signer-count u5)
