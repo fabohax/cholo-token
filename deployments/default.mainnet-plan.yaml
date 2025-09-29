@@ -10,7 +10,7 @@ plan:
       transactions:
         - contract-publish:
             contract-name: cholo
-            expected-sender: SP1V664NFWTTZWXY058VRHZHGMJEZV0R6508JEH7Z
+            expected-sender: SP1PQMVQHJM74WKNK3TM6HG4YR5AYEFKV4CKBYSKX
             cost: 730083
             path: contracts/cholo.clar
             anchor-block-only: true
