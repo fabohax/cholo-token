@@ -1,6 +1,6 @@
 [project]
 name = "cholo"
-description = "first latin memecoin on Stacks"
+description = ""
 authors = []
 telemetry = true
 cache_dir = "./.cache"
