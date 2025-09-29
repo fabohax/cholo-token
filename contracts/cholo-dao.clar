@@ -1,259 +1,359 @@
 ;; title: CHOLO DAO
-;; version: 2.0.1
-;; summary: Multisig treasury for CHOLO DAO on Stacks, with dynamic signer management.
-;; description: Multisig contract that holds funds and allows adding, removing, or replacing signers via proposals and votes.
+;; version: 2.1.0
+;; summary: Multisig treasury for CHOLO DAO on Stacks, with timelock, events and safer signer indexing.
+;; description: Holds funds and executes actions via proposals approved by a dynamic signer set.
 
-;; Dynamic signer set
-(define-map signers {idx: uint} principal)
+;; =========================
+;; Constants / "Enums"
+;; =========================
+(define-constant PROPOSAL_TRANSFER          "transfer")           ;; STX transfer
+(define-constant PROPOSAL_TOKEN_TRANSFER    "token-transfer")     ;; SIP-010 transfer
+(define-constant PROPOSAL_ADD_SIGNER        "add-signer")
+(define-constant PROPOSAL_REMOVE_SIGNER     "remove-signer")
+(define-constant PROPOSAL_REPLACE_SIGNER    "replace-signer")
+(define-constant PROPOSAL_SET_REQUIRED      "set-required-sigs")
+(define-constant PROPOSAL_SET_DELAY         "set-exec-delay")
+
+(define-constant MIN_SIGNERS                u3)
+(define-constant MIN_TTL_BLOCKS             u10)     ;; min blocks until expiration
+(define-constant MAX_TTL_BLOCKS             u10000) ;; max blocks until expiration
+
+;; =========================
+;; Errors
+;; =========================
+(define-constant ERR_NOT_SIGNER               (err u100))
+(define-constant ERR_ALREADY_EXECUTED         (err u101))
+(define-constant ERR_NOT_ENOUGH_APPROVALS     (err u102))
+(define-constant ERR_ALREADY_APPROVED         (err u103))
+(define-constant ERR_NOT_FOUND                (err u104))
+(define-constant ERR_PROPOSAL_EXPIRED         (err u105))
+(define-constant ERR_MIN_SIGNERS              (err u106))
+(define-constant ERR_BAD_PARAMS               (err u107))
+(define-constant ERR_UNKNOWN_TYPE             (err u108))
+
+;; =========================
+;; Storage
+;; =========================
+(define-map signers        {idx: uint} principal)
+(define-map signer-index   {signer: principal} {idx: uint})
 (define-data-var signer-count uint u0)
-(define-data-var required-sigs uint u3) ;; legacy var kept for compatibility; computed dynamically instead
-(define-constant MIN_SIGNERS uint u3)
 
-;; Error Codes
-(define-constant ERR_NOT_SIGNER (err u100))
-(define-constant ERR_ALREADY_EXECUTED (err u101))
-(define-constant ERR_ALREADY_APPROVED (err u103))
-(define-constant ERR_NOT_FOUND (err u104))
-(define-constant ERR_NOT_ENOUGH_APPROVALS (err u102))
-(define-constant ERR_PROPOSAL_EXPIRED (err u105))
-(define-constant ERR_MIN_SIGNERS (err u106))
+;; quorum: if >0, usa valor fijo; si =0, se calcula 51%
+(define-data-var required-sigs uint u0)
 
-(define-map proposals 
-  {id: uint}
-  {recipient: principal, amount: uint, approvals: uint, executed: bool, proposal-type: (string-ascii 16), new-signer: (optional principal), old-signer: (optional principal), token: (optional principal), description: (string-utf8 256), expiration: uint})
-(define-map approvals
-  {id: uint, signer: principal}
-  bool)
+;; timelock (bloques entre aprobación y ejecución permitida)
+(define-data-var execution-delay uint u10)
 
 (define-data-var next-id uint u0)
 
-;; Initial signers setup
+(define-map proposals 
+  {id: uint}
+  {
+    recipient: principal,
+    amount: uint,
+    approvals: uint,
+    executed: bool,
+    proposal-type: (string-ascii 16),
+    new-signer: (optional principal),
+    old-signer: (optional principal),
+    token: (optional principal),
+    description: (string-utf8 256),
+    expiration: uint,
+    created: uint,
+    new-required: (optional uint),  ;; para set-required-sigs
+    new-delay: (optional uint)      ;; para set-exec-delay
+  })
+
+(define-map approvals {id: uint, signer: principal} bool)
+
+;; =========================
+;; Init signers
+;; =========================
 (begin
   (map-set signers {idx: u0} 'SP193GXQTNHVV9WSAPHAB89M6R9QSEXZKS3774CMD) ;; @fabohax
+  (map-set signer-index {signer: 'SP193GXQTNHVV9WSAPHAB89M6R9QSEXZKS3774CMD} {idx: u0})
+
   (map-set signers {idx: u1} 'ST2YDY8H45J5HTN5M0H2XQH0JFCR4RWCA92QCZ7W6) ;; @anthozg
+  (map-set signer-index {signer: 'ST2YDY8H45J5HTN5M0H2XQH0JFCR4RWCA92QCZ7W6} {idx: u1})
+
   (map-set signers {idx: u2} 'ST4ZB0M2ZKP1HRZPVAPE4X14K689X22N29YQQBG2) ;; @sirohxi
+  (map-set signer-index {signer: 'ST4ZB0M2ZKP1HRZPVAPE4X14K689X22N29YQQBG2} {idx: u2})
+
   (map-set signers {idx: u3} 'ST9E6QNWPX7WVYJWTDAJ4WMXDNFHFSFKF91N68Z7) ;; @navynox
-  (map-set signers {idx: u4} 'SP3KR4YF7YRCMP1XGQ7T5Q2AV2CV6EYE3AGSB27ES) ;; @marsetti
-  (var-set signer-count u5) ;; initialize signer count
+  (map-set signer-index {signer: 'ST9E6QNWPX7WVYJWTDAJ4WMXDNFHFSFKF91N68Z7} {idx: u3})
+
+  (map-set signers {idx: u4} 'SP3KR4YF7YRCMP1XGQ7T5Q2AV2CV6EYE3AGSB27ES) ;; @pmarsetti
+  (map-set signer-index {signer: 'SP3KR4YF7YRCMP1XGQ7T5Q2AV2CV6EYE3AGSB27ES} {idx: u4})
+
+  (var-set signer-count u5)
 )
 
-;; Deposit STX into the contract
-(define-public (deposit (amount uint))
-  (stx-transfer? amount tx-sender (as-contract tx-sender))
-)
-
-;; Create a proposal
-(define-public (create-proposal (recipient principal) (amount uint) (proposal-type (string-ascii 16)) (new-signer (optional principal)) (old-signer (optional principal)) (token (optional principal)) (description (string-utf8 256)) (expiration uint))
-  (begin
-    (asserts! (is-signer tx-sender) ERR_NOT_SIGNER)
-    (let ((id (var-get next-id)))
-      (map-set proposals {id: id}
-        {recipient: recipient,
-         amount: amount,
-         approvals: u0,
-         executed: false,
-         proposal-type: proposal-type,
-         new-signer: new-signer,
-         old-signer: old-signer,
-         token: token,
-         description: description,
-         expiration: expiration})
-      (var-set next-id (+ id u1))
-      (ok id)
-    )
-  )
-)
-
-;; Approve a proposal
-(define-public (approve-proposal (id uint))
-  (let ((prop (map-get? proposals {id: id})))
-    (match prop
-      proposal
-      (begin
-        (asserts! (not (get executed proposal)) ERR_ALREADY_EXECUTED)
-        (asserts! (is-signer tx-sender) ERR_NOT_SIGNER)
-        (asserts! (is-none (map-get? approvals {id: id, signer: tx-sender})) ERR_ALREADY_APPROVED)
-        (asserts! (> (get expiration proposal) block-height) ERR_PROPOSAL_EXPIRED)
-        (map-set approvals {id: id, signer: tx-sender} true)
-        (map-set proposals {id: id}
-          {recipient: (get recipient proposal),
-           amount: (get amount proposal),
-           approvals: (+ (get approvals proposal) u1),
-           executed: false,
-           proposal-type: (get proposal-type proposal),
-           new-signer: (get new-signer proposal),
-           old-signer: (get old-signer proposal),
-           token: (get token proposal),
-           description: (get description proposal),
-           expiration: (get expiration proposal)})
-        (ok true))
-  ERR_NOT_FOUND
-    )
-  )
-)
-
-;; Helper: check if a principal is a signer
+;; =========================
+;; Helpers
+;; =========================
 (define-read-only (is-signer (who principal))
-  (let ((count (var-get signer-count)))
-    (let loop ((i u0))
-      (if (>= i count)
-          false
-          (match (map-get? signers {idx: i})
-            signer (if (is-eq who signer) true (loop (+ i u1)))
-            none (loop (+ i u1)))))))
-)
+  (default-to false (map-get? signer-index {signer: who})))
 
-;; Execute a proposal if it reaches quorum
-(define-public (execute-proposal (id uint))
-  (let ((prop (map-get? proposals {id: id})))
-    (match prop
-      proposal
-      (begin
-  (asserts! (>= (get approvals proposal) (compute-required-sigs)) ERR_NOT_ENOUGH_APPROVALS)
-        (asserts! (not (get executed proposal)) ERR_ALREADY_EXECUTED)
-        (asserts! (> (get expiration proposal) block-height) ERR_PROPOSAL_EXPIRED)
-        (map-set proposals {id: id}
-          {recipient: (get recipient proposal),
-           amount: (get amount proposal),
-           approvals: (get approvals proposal),
-           executed: true,
-           proposal-type: (get proposal-type proposal),
-           new-signer: (get new-signer proposal),
-           old-signer: (get old-signer proposal),
-           token: (get token proposal),
-           description: (get description proposal),
-           expiration: (get expiration proposal)})
-        (if (is-eq (get proposal-type proposal) "transfer")
-          (stx-transfer? (get amount proposal) (as-contract tx-sender) (get recipient proposal))
-          (if (is-eq (get proposal-type proposal) "token-transfer")
-            (token-transfer (get token proposal) (get amount proposal) (get recipient proposal))
-            (if (is-eq (get proposal-type proposal) "add-signer")
-              (add-signer (get new-signer proposal))
-              (if (is-eq (get proposal-type proposal) "remove-signer")
-                (remove-signer (get old-signer proposal))
-                (if (is-eq (get proposal-type proposal) "replace-signer")
-                  (replace-signer (get old-signer proposal) (get new-signer proposal))
-                  (ok false)
-                )
-              )
-            )
-          )
-        ))
-      ERR_NOT_FOUND
-    )
-  )
-)
+(define-read-only (get-signer-count) (var-get signer-count))
 
-;; SIP-010 token transfer helper with validation
-(define-private (token-transfer (token-contract (optional principal)) (amount uint) (recipient principal))
-  (match token-contract
-    some-token
-      (as-contract
-        (let ((res (contract-call? some-token transfer amount (as-contract tx-sender) recipient none)))
-          (match res
-            ok-val (ok ok-val)
-            err-val (err err-val))))
-    none (ok false)))
-
-;; Add a signer
-(define-private (add-signer (new (optional principal)))
-  (match new
-    some-new
-      (let ((count (var-get signer-count)))
-        ;; Prevent adding duplicates
-        (match (find-signer-index some-new)
-          some-idx (ok false)
-          none
-            (begin
-              (map-set signers {idx: count} some-new)
-              (var-set signer-count (+ count u1))
-              (ok true))))
-    none (ok false)))
-
-;; Remove a signer
-(define-private (remove-signer (old (optional principal)))
-  (match old
-    some-old
-      (let ((count (var-get signer-count)))
-        (asserts! (> count MIN_SIGNERS) ERR_MIN_SIGNERS)
-        (let ((found-idx (find-signer-index some-old)))
-          (match found-idx
-            some-idx
-              (begin
-                ;; Shift all signers after the removed one to fill the gap
-                (compact-signers some-idx)
-                (var-set signer-count (- count u1))
-                (ok true))
-            none (ok false))))
-    none (ok false)))
-
-;; Replace a signer
-(define-private (replace-signer (old (optional principal)) (new (optional principal)))
-  (match old
-    some-old
-      (match new
-        some-new
-          (let ((found-idx (find-signer-index some-old)))
-            (match found-idx
-              some-idx
-                (begin
-                  (map-set signers {idx: some-idx} some-new)
-                  (ok true))
-              none (ok false)))
-        none (ok false))
-    none (ok false)))
-
-;; Helper function to find the index of a signer
-(define-private (find-signer-index (target principal))
-  (let ((count (var-get signer-count)))
-    (let loop ((i u0))
-      (if (>= i count)
-          none
-          (match (map-get? signers {idx: i})
-            signer (if (is-eq signer target) (some i) (loop (+ i u1)))
-            none (loop (+ i u1)))))))
-
-;; Helper function to compact signers array after removal
-(define-private (compact-signers (removed-idx uint))
-  (let ((count (var-get signer-count)))
-    (let loop ((i removed-idx))
-      (if (>= i (- count u1))
-          (map-delete signers {idx: (- count u1)})
-          (match (map-get? signers {idx: (+ i u1)})
-            next-signer
-              (begin
-                (map-set signers {idx: i} next-signer)
-                (loop (+ i u1)))
-            none
-              (begin
-                ;; If the next index is missing, delete current and continue
-                (map-delete signers {idx: i})
-                (loop (+ i u1))))))))
-
-;; Read-only functions for querying contract state
-(define-read-only (get-signer-count)
-  (var-get signer-count))
-
-(define-private (compute-required-sigs)
-  ;; Compute 51% of signers, rounding up. Returns at least 1 for non-zero signers.
+(define-private (compute-required-sigs-51)
   (let ((count (var-get signer-count)))
     (if (<= count u0)
         u0
-        (let ((num (* count u51))
-              (base u0))
+        (let ((num (* count u51)))
           (let ((base (/ num u100)) (rem (mod num u100)))
             (let ((res (if (> rem u0) (+ base u1) base)))
-              ;; Ensure at least 1 required sig when count > 0
-              (if (> res u0) res u1))))))
+              (if (> res u0) res u1)))))))
 
 (define-read-only (get-required-sigs)
-  (compute-required-sigs))
+  (let ((cfg (var-get required-sigs)))
+    (if (> cfg u0) cfg (compute-required-sigs-51))))
 
 (define-read-only (get-signer (idx uint))
   (map-get? signers {idx: idx}))
 
-(define-read-only (get-proposal (id uint))
-  (map-get? proposals {id: id}))
+;; slice: devuelve hasta `len` signers desde `start` (máx 20 por llamada)
+(define-read-only (get-signers-slice (start uint) (len uint))
+  (let ((n (if (> len u20) u20 len)))
+    (get-slice-acc start n (list))))
+
+(define-read-only (get-slice-acc (i uint) (left uint) (acc (list 20 principal)))
+  (if (is-eq left u0)
+      acc
+      (match (map-get? signers {idx: i})
+        s (get-slice-acc (+ i u1) (- left u1) (as-max-len? (cons s acc) u20))
+        none (get-slice-acc (+ i u1) (- left u1) acc))))
 
 (define-read-only (has-approved (id uint) (signer principal))
   (default-to false (map-get? approvals {id: id, signer: signer})))
+
+(define-read-only (get-proposal (id uint))
+  (map-get? proposals {id: id}))
+
+;; signer-indexing atomic helpers
+(define-private (add-signer-internal (p principal))
+  (let ((count (var-get signer-count)))
+    (map-set signers {idx: count} p)
+    (map-set signer-index {signer: p} {idx: count})
+    (var-set signer-count (+ count u1))
+    (ok true)))
+
+(define-private (remove-signer-internal (p principal))
+  (let ((count (var-get signer-count)))
+    (asserts! (> count MIN_SIGNERS) ERR_MIN_SIGNERS)
+    (match (map-get? signer-index {signer: p})
+      e
+        (let ((idx (get idx e)) (last-idx (- count u1)))
+          (if (is-eq idx last-idx)
+              (begin
+                (map-delete signers {idx: idx})
+                (map-delete signer-index {signer: p})
+                (var-set signer-count (- count u1))
+                (ok true))
+              (match (map-get? signers {idx: last-idx})
+                last-p
+                  (begin
+                    (map-set signers {idx: idx} last-p)
+                    (map-set signer-index {signer: last-p} {idx: idx})
+                    (map-delete signers {idx: last-idx})
+                    (map-delete signer-index {signer: p})
+                    (var-set signer-count (- count u1))
+                    (ok true))
+                none (ok false)))))
+      none (ok false))))
+
+(define-private (replace-signer-internal (oldp principal) (newp principal))
+  (match (map-get? signer-index {signer: oldp})
+    e
+      (let ((idx (get idx e)))
+        (map-set signers {idx: idx} newp)
+        (map-delete signer-index {signer: oldp})
+        (map-set signer-index {signer: newp} {idx: idx})
+        (ok true))
+    none (ok false)))
+
+;; =========================
+;; Public: Funds
+;; =========================
+(define-public (deposit (amount uint))
+  (stx-transfer? amount tx-sender (as-contract tx-sender)))
+
+;; =========================
+;; Proposals
+;; =========================
+(define-public (create-proposal
+  (recipient principal)
+  (amount uint)
+  (proposal-type (string-ascii 16))
+  (new-signer (optional principal))
+  (old-signer (optional principal))
+  (token (optional principal))
+  (description (string-utf8 256))
+  (expiration uint)               ;; absolute block height
+  (new-required (optional uint))  ;; only for PROPOSAL_SET_REQUIRED
+  (new-delay (optional uint)      ;; only for PROPOSAL_SET_DELAY
+))
+  (begin
+    (asserts! (is-signer tx-sender) ERR_NOT_SIGNER)
+    ;; expiration sanity: now + MIN_TTL <= expiration <= now + MAX_TTL
+    (asserts! (>= expiration (+ block-height MIN_TTL_BLOCKS)) ERR_BAD_PARAMS)
+    (asserts! (<= (- expiration block-height) MAX_TTL_BLOCKS) ERR_BAD_PARAMS)
+
+    (let ((id (var-get next-id)))
+      (map-set proposals {id: id}
+        {
+          recipient: recipient,
+          amount: amount,
+          approvals: u0,
+          executed: false,
+          proposal-type: proposal-type,
+          new-signer: new-signer,
+          old-signer: old-signer,
+          token: token,
+          description: description,
+          expiration: expiration,
+          created: block-height,
+          new-required: new-required,
+          new-delay: new-delay
+        })
+      (var-set next-id (+ id u1))
+      (print (tuple (event "proposal-created") (id id) (by tx-sender) (type proposal-type)))
+      (ok id))))
+
+(define-public (approve-proposal (id uint))
+  (let ((p (map-get? proposals {id: id})))
+    (match p
+      prop
+        (begin
+          (asserts! (is-signer tx-sender) ERR_NOT_SIGNER)
+          (asserts! (not (get executed prop)) ERR_ALREADY_EXECUTED)
+          (asserts! (is-none (map-get? approvals {id: id, signer: tx-sender})) ERR_ALREADY_APPROVED)
+          (asserts! (> (get expiration prop) block-height) ERR_PROPOSAL_EXPIRED)
+
+          (map-set approvals {id: id, signer: tx-sender} true)
+          (map-set proposals {id: id}
+            (merge-proposal-approvals prop (+ (get approvals prop) u1)))
+          (print (tuple (event "proposal-approved") (id id) (by tx-sender)))
+          (ok true))
+      ERR_NOT_FOUND)))
+
+(define-private (merge-proposal-approvals (p {recipient: principal, amount: uint, approvals: uint, executed: bool, proposal-type: (string-ascii 16), new-signer: (optional principal), old-signer: (optional principal), token: (optional principal), description: (string-utf8 256), expiration: uint, created: uint, new-required: (optional uint), new-delay: (optional uint)}) (new-approvals uint))
+  {
+    recipient: (get recipient p),
+    amount: (get amount p),
+    approvals: new-approvals,
+    executed: (get executed p),
+    proposal-type: (get proposal-type p),
+    new-signer: (get new-signer p),
+    old-signer: (get old-signer p),
+    token: (get token p),
+    description: (get description p),
+    expiration: (get expiration p),
+    created: (get created p),
+    new-required: (get new-required p),
+    new-delay: (get new-delay p)
+  })
+
+;; =========================
+;; Execute (checks-effects-interactions + timelock)
+;; =========================
+(define-public (execute-proposal (id uint))
+  (let ((p? (map-get? proposals {id: id})))
+    (match p?
+      p
+        (let (
+              (need (get-required-sigs))
+              (delay (var-get execution-delay))
+             )
+          (asserts! (>= (get approvals p) need) ERR_NOT_ENOUGH_APPROVALS)
+          (asserts! (not (get executed p)) ERR_ALREADY_EXECUTED)
+          (asserts! (> (get expiration p) block-height) ERR_PROPOSAL_EXPIRED)
+          (asserts! (>= block-height (+ (get created p) delay)) ERR_BAD_PARAMS)
+
+          ;; effects: mark executed first; if anything fails next, tx reverts atomically
+          (map-set proposals {id: id} (set-executed p true))
+
+          ;; interactions:
+          (asserts! (dispatch-execution p) ERR_UNKNOWN_TYPE)
+          (print (tuple (event "proposal-executed") (id id)))
+          (ok true))
+      ERR_NOT_FOUND)))
+
+(define-private (set-executed (p {recipient: principal, amount: uint, approvals: uint, executed: bool, proposal-type: (string-ascii 16), new-signer: (optional principal), old-signer: (optional principal), token: (optional principal), description: (string-utf8 256), expiration: uint, created: uint, new-required: (optional uint), new-delay: (optional uint)}) (flag bool))
+  {
+    recipient: (get recipient p),
+    amount: (get amount p),
+    approvals: (get approvals p),
+    executed: flag,
+    proposal-type: (get proposal-type p),
+    new-signer: (get new-signer p),
+    old-signer: (get old-signer p),
+    token: (get token p),
+    description: (get description p),
+    expiration: (get expiration p),
+    created: (get created p),
+    new-required: (get new-required p),
+    new-delay: (get new-delay p)
+  })
+
+(define-private (dispatch-execution (p {recipient: principal, amount: uint, approvals: uint, executed: bool, proposal-type: (string-ascii 16), new-signer: (optional principal), old-signer: (optional principal), token: (optional principal), description: (string-utf8 256), expiration: uint, created: uint, new-required: (optional uint), new-delay: (optional uint)}))
+  (let ((t (get proposal-type p)))
+    (if (is-eq t PROPOSAL_TRANSFER)
+        (unwrap! (stx-transfer? (get amount p) (as-contract tx-sender) (get recipient p)) ERR_BAD_PARAMS)
+    (if (is-eq t PROPOSAL_TOKEN_TRANSFER)
+        (unwrap! (token-transfer (get token p) (get amount p) (get recipient p)) ERR_BAD_PARAMS)
+    (if (is-eq t PROPOSAL_ADD_SIGNER)
+        (match (get new-signer p)
+          some-p (unwrap! (add-signer-safe some-p) ERR_BAD_PARAMS)
+          none   false)
+    (if (is-eq t PROPOSAL_REMOVE_SIGNER)
+        (match (get old-signer p)
+          some-p (unwrap! (remove-signer-safe some-p) ERR_BAD_PARAMS)
+          none   false)
+    (if (is-eq t PROPOSAL_REPLACE_SIGNER)
+        (match (get old-signer p)
+          oldp
+            (match (get new-signer p)
+              newp (unwrap! (replace-signer-safe oldp newp) ERR_BAD_PARAMS)
+              none false)
+          none false)
+    (if (is-eq t PROPOSAL_SET_REQUIRED)
+        (match (get new-required p)
+          nr (begin (asserts! (> nr u0) ERR_BAD_PARAMS)
+                    (asserts! (<= nr (var-get signer-count)) ERR_BAD_PARAMS)
+                    (var-set required-sigs nr)
+                    true)
+          none false)
+    (if (is-eq t PROPOSAL_SET_DELAY)
+        (match (get new-delay p)
+          nd (begin (asserts! (>= nd u0) ERR_BAD_PARAMS)
+                    (var-set execution-delay nd)
+                    true)
+          none false)
+        false)))))))))
+
+;; =========================
+;; Token (SIP-010) transfer helper
+;; =========================
+(define-private (token-transfer (token-contract (optional principal)) (amount uint) (recipient principal))
+  (match token-contract
+    some-token
+      (let ((res (as-contract (contract-call? some-token transfer amount (as-contract tx-sender) recipient none))))
+        (match res ok-val (ok ok-val) err-val (err err-val)))
+    none (ok false)))
+
+;; =========================
+;; Signer ops (safe)
+;; =========================
+(define-private (add-signer-safe (p principal))
+  (match (map-get? signer-index {signer: p})
+    _ (ok false)  ;; ya existe
+    none (add-signer-internal p)))
+
+(define-private (remove-signer-safe (p principal))
+  (remove-signer-internal p))
+
+(define-private (replace-signer-safe (oldp principal) (newp principal))
+  (match (map-get? signer-index {signer: newp})
+    _ (ok false)  ;; no duplicates
+    none (replace-signer-internal oldp newp)))
