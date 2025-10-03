@@ -1,8 +1,8 @@
 ;; title: CHOLO
-;; version: 1.0.0
-;; summary: $CHOLO is a fungible token with a fixed supply of 8,000,000,000.
-;; description: $CHOLO is the first memecoin created in LATAM anchored to Bitcoin L2 Stacks.
-;; Complies with SIP-010 standard with no external dependencies.
+;; version: 1.0.1
+;; summary: $CHOLO fungible token with fixed supply.
+;; description: First memecoin LATAM anchored to Bitcoin L2 Stacks.
+;; SIP-010 compliant.
 
 (define-trait sip-010-trait
   (
@@ -21,13 +21,14 @@
 
 ;; ERROR CODES
 (define-constant ERR_DEPLOYER_ONLY        (err u100))
-(define-constant ERR_NOT_TOKEN_OWNER      (err u101))
+(define-constant ERR_NOT_ALLOWED          (err u101))
 (define-constant ERR_INVALID_AMOUNT       (err u102))
 (define-constant ERR_INVALID_RECIPIENT    (err u103))
 (define-constant ERR_MAX_SUPPLY_EXCEEDED  (err u104))
 (define-constant ERR_INVALID_OWNER        (err u105))
 (define-constant ERR_UNAUTHORIZED         (err u106))
 (define-constant ERR_INVALID_URI          (err u107))
+(define-constant ERR_ALREADY_INITIALIZED  (err u108))
 
 ;; CONSTANTS
 (define-constant TOKEN_NAME    "CHOLO")
@@ -40,6 +41,7 @@
 (define-data-var TOKEN_URI (string-ascii 256) "https://cholo.meme/bafkreibwuiavedbqjkvksvulm3focfv7ic2kd63c6lu5frtklteiys2mnq")
 (define-data-var DEPLOYER principal tx-sender)
 (define-data-var ADMIN    principal tx-sender)
+(define-data-var INITIALIZED bool false)
 
 ;; ========== READ-ONLY ==========
 (define-read-only (get-balance (who principal))
@@ -78,15 +80,14 @@
   )
 )
 
-;; Transfer
+;; Transfer (ahora contratos pueden mover fondos si tienen tokens)
 (define-public (transfer (amount uint) (sender principal) (recipient principal) (memo (optional (buff 34))))
   (begin
     (asserts! (> amount u0) ERR_INVALID_AMOUNT)
-    (asserts! (is-eq tx-sender sender) ERR_NOT_TOKEN_OWNER)
     (asserts! (not (is-eq recipient BURN_ADDRESS)) ERR_INVALID_RECIPIENT)
     (match (ft-transfer? CHOLO amount sender recipient)
       ok-val (begin
-  (emit-transfer-event sender recipient amount (if (is-some memo) memo none))
+        (emit-transfer-event sender recipient amount memo)
         (ok true))
       err-val (err err-val))
   )
@@ -123,8 +124,12 @@
 )
 
 ;; ========== INIT ==========
-(begin
-  ;; Mint full fixed supply to deployer at launch 
-  (try! (ft-mint? CHOLO u8000000000 tx-sender))
-  (ok true)
+(define-public (initialize)
+  (begin
+    (asserts! (is-eq tx-sender (var-get DEPLOYER)) ERR_DEPLOYER_ONLY)
+    (asserts! (not (var-get INITIALIZED)) ERR_ALREADY_INITIALIZED)
+    (try! (ft-mint? CHOLO MAX_SUPPLY tx-sender))
+    (var-set INITIALIZED true)
+    (ok true)
+  )
 )
