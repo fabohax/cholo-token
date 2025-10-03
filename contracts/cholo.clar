@@ -2,19 +2,17 @@
 ;; version: 0.0.1
 ;; summary: $CHOLO fungible token with fixed supply.
 ;; description: First memecoin created in LATAM anchored to Bitcoin L2 Stacks.
-;; SIP-010 compliant.
 
+;; SIP-010 STANDARD
 (define-trait sip-010-trait
     (
-        ;; Read-only functions
         (get-balance (principal) (response uint uint))
         (get-total-supply () (response uint uint))
         (get-decimals () (response uint uint))
         (get-symbol () (response (string-ascii 12) uint))
         (get-name () (response (string-ascii 32) uint))
-  (get-token-uri () (response (optional (string-utf8 256)) uint))
+        (get-token-uri () (response (optional (string-utf8 256)) uint))
         
-        ;; Public functions
         (transfer (uint principal principal (optional (buff 34))) (response bool uint))
         (mint (uint principal) (response bool uint))
     )
@@ -65,14 +63,6 @@
   (ok (some (var-get token-uri)))
 )
 
-(define-public (set-token-uri (new-uri (string-utf8 256)))
-  (begin
-    (asserts! (is-eq tx-sender (var-get cholo-deployer)) ERR_OWNER_ONLY)
-    (var-set token-uri new-uri)
-    (ok true)
-  )
-)
-
 ;; PUBLIC FUN
 (define-public (mint (amount uint) (recipient principal))
   (begin
@@ -111,6 +101,14 @@
     (asserts! (is-eq tx-sender (var-get cholo-deployer)) ERR_OWNER_ONLY)
     (asserts! (not (is-eq new-owner BURN_ADDRESS)) ERR_INVALID_OWNER)
     (var-set cholo-deployer new-owner)
+    (ok true)
+  )
+)
+
+(define-public (set-token-uri (new-uri (string-utf8 256)))
+  (begin
+    (asserts! (is-eq tx-sender (var-get cholo-deployer)) ERR_OWNER_ONLY)
+    (var-set token-uri new-uri)
     (ok true)
   )
 )
