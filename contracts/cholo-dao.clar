@@ -181,7 +181,7 @@
   (expiration uint)               ;; absolute block height
   (new-required (optional uint))  ;; only for PROPOSAL_SET_REQUIRED
   (new-delay (optional uint))     ;; only for PROPOSAL_SET_DELAY
-))
+)
   (begin
     (asserts! (is-signer tx-sender) ERR_NOT_SIGNER)
     ;; expiration sanity: now + MIN_TTL <= expiration <= now + MAX_TTL
