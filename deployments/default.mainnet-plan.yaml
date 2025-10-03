@@ -1,0 +1,18 @@
+---
+id: 0
+name: Mainnet deployment
+network: mainnet
+stacks-node: "https://stacks-node-api.mainnet.stacks.co"
+bitcoin-node: "http://blockstack:blockstacksystem@bitcoin.blockstack.com:8332"
+plan:
+  batches:
+    - id: 0
+      transactions:
+        - contract-publish:
+            contract-name: cholo
+            expected-sender: SPXMZRVQD975VV059PHT95JN4ADFVVJCTWR3K6WV
+            cost: 735384
+            path: contracts/cholo.clar
+            anchor-block-only: true
+            clarity-version: 2
+      epoch: "2.4"
