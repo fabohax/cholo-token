@@ -38,11 +38,10 @@
 (define-map signer-index   {signer: principal} {idx: uint})
 (define-data-var signer-count uint u0)
 
-;; quorum: if >0, usa valor fijo; si =0, se calcula 51%
+;; quorum: if >0, use fixed value; if =0, compute 51%
 (define-data-var required-sigs uint u0)
 
-;; timelock (bloques entre aprobación y ejecución permitida)
-(define-data-var execution-delay uint u10)
+(define-data-var execution-delay uint u10) ;; timelock (blocks between approval and allowed execution)
 
 (define-data-var next-id uint u0)
 
@@ -60,8 +59,8 @@
     description: (string-utf8 256),
     expiration: uint,
     created: uint,
-    new-required: (optional uint),  ;; para set-required-sigs
-    new-delay: (optional uint)      ;; para set-exec-delay
+  new-required: (optional uint),  ;; for set-required-sigs
+  new-delay: (optional uint)      ;; for set-exec-delay
   })
 
 (define-map approvals {id: uint, signer: principal} bool)
@@ -112,17 +111,7 @@
 (define-read-only (get-signer (idx uint))
   (map-get? signers {idx: idx}))
 
-;; slice: devuelve hasta `len` signers desde `start` (máx 20 por llamada)
-(define-read-only (get-signers-slice (start uint) (len uint))
-  (let ((n (if (> len u20) u20 len)))
-    (get-slice-acc start n (list))))
-
-(define-read-only (get-slice-acc (i uint) (left uint) (acc (list 20 principal)))
-  (if (is-eq left u0)
-      acc
-      (match (map-get? signers {idx: i})
-        s (get-slice-acc (+ i u1) (- left u1) (as-max-len? (cons s acc) u20))
-        none (get-slice-acc (+ i u1) (- left u1) acc))))
+;; signer slice helpers removed (not used). If you need pagination, reintroduce a non-recursive approach.
 
 (define-read-only (has-approved (id uint) (signer principal))
   (default-to false (map-get? approvals {id: id, signer: signer})))
@@ -138,7 +127,7 @@
     (var-set signer-count (+ count u1))
     (ok true)))
 
-(define-private (remove-signer-internal (p principal))
+ (define-private (remove-signer-internal (p principal))
   (let ((count (var-get signer-count)))
     (asserts! (> count MIN_SIGNERS) ERR_MIN_SIGNERS)
     (match (map-get? signer-index {signer: p})
@@ -159,7 +148,7 @@
                     (map-delete signer-index {signer: p})
                     (var-set signer-count (- count u1))
                     (ok true))
-                none (ok false)))))
+                none (ok false))))
       none (ok false))))
 
 (define-private (replace-signer-internal (oldp principal) (newp principal))
@@ -191,7 +180,7 @@
   (description (string-utf8 256))
   (expiration uint)               ;; absolute block height
   (new-required (optional uint))  ;; only for PROPOSAL_SET_REQUIRED
-  (new-delay (optional uint)      ;; only for PROPOSAL_SET_DELAY
+  (new-delay (optional uint))     ;; only for PROPOSAL_SET_DELAY
 ))
   (begin
     (asserts! (is-signer tx-sender) ERR_NOT_SIGNER)
@@ -217,8 +206,8 @@
           new-delay: new-delay
         })
       (var-set next-id (+ id u1))
-      (print (tuple (event "proposal-created") (id id) (by tx-sender) (type proposal-type)))
-      (ok id))))
+  (print (tuple (event "proposal-created") (id id) (by tx-sender) (type proposal-type)))
+  (ok id)))
 
 (define-public (approve-proposal (id uint))
   (let ((p (map-get? proposals {id: id})))
@@ -347,7 +336,7 @@
 ;; =========================
 (define-private (add-signer-safe (p principal))
   (match (map-get? signer-index {signer: p})
-    _ (ok false)  ;; ya existe
+    entry (ok false)  ;; already exists
     none (add-signer-internal p)))
 
 (define-private (remove-signer-safe (p principal))
@@ -355,5 +344,5 @@
 
 (define-private (replace-signer-safe (oldp principal) (newp principal))
   (match (map-get? signer-index {signer: newp})
-    _ (ok false)  ;; no duplicates
+    entry (ok false)  ;; duplicate exists
     none (replace-signer-internal oldp newp)))
