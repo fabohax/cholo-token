@@ -91,5 +91,5 @@
 
 ;; MINT 8B
 (begin
-  (try! (ft-mint? cholo u8000000000 cholo-deployer)) 
+  (try! (ft-mint? cholo u800000000000000000 cholo-deployer)) 
 )
