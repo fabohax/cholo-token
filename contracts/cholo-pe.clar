@@ -20,19 +20,13 @@
 (define-fungible-token cholo)
 (define-constant contract-owner tx-sender)
 
-;; ---------------------------------------------------------
-;; Constants/Variables
-;; ---------------------------------------------------------
-(define-data-var token-uri (optional (string-utf8 256)) none)
+;; CONSTANTS/VARIABLES
+(define-data-var token-uri (optional (string-ascii 256)) none)
 
-;; ---------------------------------------------------------
-;; Errors
-;; ---------------------------------------------------------
+;; ERROR CODES
 (define-constant ERR_UNAUTHORIZED (err u100))
 
-;; ---------------------------------------------------------
-;; SIP-10 Functions
-;; ---------------------------------------------------------
+;; CHOLO FUN
 (define-public (transfer
   (amount uint)
   (sender principal)
@@ -43,7 +37,6 @@
     ;; #[filter(amount, recipient)]
     (asserts! (is-eq tx-sender sender) ERR_UNAUTHORIZED)
     (try! (ft-transfer? cholo amount sender recipient))
-    (match memo to-print (print to-print) 0x)
     (ok true)
   )
 )
@@ -61,7 +54,7 @@
 )
 
 (define-read-only (get-decimals)
-  (ok u6)
+  (ok u8)
 )
 
 (define-read-only (get-total-supply)
@@ -73,7 +66,7 @@
     )
 )
 
-(define-public (set-token-uri (value (string-utf8 256)))
+(define-public (set-token-uri (value (string-ascii 256)))
   ;; #[filter(value)]
   (if (is-eq tx-sender contract-owner)
     (ok (var-set token-uri (some value)))
@@ -81,30 +74,22 @@
   )
 )
 
-;; ---------------------------------------------------------
-;; Utility Functions
-;; ---------------------------------------------------------
+;; UTILITY
+;; Batch-send: fold over recipients and stop on first error
 (define-public (send-many (recipients (list 200 { to: principal, amount: uint, memo: (optional (buff 34)) })))
   (fold check-err (map send-token recipients) (ok true))
 )
 
 (define-private (check-err (result (response bool uint)) (prior (response bool uint)))
-  (match prior ok-value result err-value (err err-value))
-)
+  (match prior
+    prior-ok result
+    prior-err (err prior-err)))
 
 (define-private (send-token (recipient { to: principal, amount: uint, memo: (optional (buff 34)) }))
-  (send-token-with-memo (get amount recipient) (get to recipient) (get memo recipient))
+  (transfer (get amount recipient) tx-sender (get to recipient) (get memo recipient))
 )
 
-(define-private (send-token-with-memo (amount uint) (to principal) (memo (optional (buff 34))))
-  (let ((transferOk (try! (transfer amount tx-sender to memo))))
-    (ok transferOk)
-  )
-)
-
-;; ---------------------------------------------------------
-;; Mint
-;; ---------------------------------------------------------
+;; MINT 8B
 (begin
   (try! (ft-mint? cholo u8000000000 contract-owner)) 
 )
