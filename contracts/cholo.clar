@@ -29,7 +29,7 @@
 (define-constant ERR_INVALID_OWNER (err u105))
 
 ;; VARS & CONS
-(define-data-var cholo-deployer principal tx-sender)
+(define-data-var cholo-owner principal tx-sender)
 (define-data-var total-minted uint u0)
 (define-data-var token-uri (string-utf8 256) u"https://cholo.meme/bafkreibwuiavedbqjkvksvulm3focfv7ic2kd63c6lu5frtklteiys2mnq")
 (define-constant TOKEN_NAME "CHOLO")
@@ -66,7 +66,7 @@
 ;; PUBLIC FUN
 (define-public (mint (amount uint) (recipient principal))
   (begin
-    (asserts! (is-eq tx-sender (var-get cholo-deployer)) ERR_OWNER_ONLY)
+    (asserts! (is-eq tx-sender (var-get cholo-owner)) ERR_OWNER_ONLY)
     (asserts! (> amount u0) ERR_INVALID_AMOUNT)
     (asserts! (not (is-eq recipient BURN_ADDRESS)) ERR_INVALID_RECIPIENT)
     (let (
@@ -98,16 +98,16 @@
 
 (define-public (set-owner (new-owner principal))
   (begin
-    (asserts! (is-eq tx-sender (var-get cholo-deployer)) ERR_OWNER_ONLY)
+    (asserts! (is-eq tx-sender (var-get cholo-owner)) ERR_OWNER_ONLY)
     (asserts! (not (is-eq new-owner BURN_ADDRESS)) ERR_INVALID_OWNER)
-    (var-set cholo-deployer new-owner)
+    (var-set cholo-owner new-owner)
     (ok true)
   )
 )
 
 (define-public (set-token-uri (new-uri (string-utf8 256)))
   (begin
-    (asserts! (is-eq tx-sender (var-get cholo-deployer)) ERR_OWNER_ONLY)
+    (asserts! (is-eq tx-sender (var-get cholo-owner)) ERR_OWNER_ONLY)
     (var-set token-uri new-uri)
     (ok true)
   )
