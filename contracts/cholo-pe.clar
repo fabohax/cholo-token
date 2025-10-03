@@ -1,5 +1,5 @@
 ;; title: CHOLO
-;; version: 1.0.1
+;; version: 0.0.1
 ;; summary: $CHOLO fungible token with fixed supply.
 ;; description: First memecoin LATAM anchored to Bitcoin L2 Stacks.
 ;; SIP-010 compliant.
@@ -18,7 +18,7 @@
 )
 
 (define-fungible-token cholo)
-(define-constant contract-owner tx-sender)
+(define-constant cholo-deployer tx-sender)
 
 ;; CONSTANTS/VARIABLES
 (define-data-var token-uri (optional (string-ascii 256)) none)
@@ -68,7 +68,7 @@
 
 (define-public (set-token-uri (value (string-ascii 256)))
   ;; #[filter(value)]
-  (if (is-eq tx-sender contract-owner)
+  (if (is-eq tx-sender cholo-deployer)
     (ok (var-set token-uri (some value)))
     (err ERR_UNAUTHORIZED)
   )
@@ -91,5 +91,5 @@
 
 ;; MINT 8B
 (begin
-  (try! (ft-mint? cholo u8000000000 contract-owner)) 
+  (try! (ft-mint? cholo u8000000000 cholo-deployer)) 
 )
