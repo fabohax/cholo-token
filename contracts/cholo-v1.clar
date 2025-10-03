@@ -12,7 +12,7 @@
         (get-decimals () (response uint uint))
         (get-symbol () (response (string-ascii 12) uint))
         (get-name () (response (string-ascii 32) uint))
-        (get-token-uri () (response (optional (string-ascii 256)) uint))
+  (get-token-uri () (response (optional (string-utf8 256)) uint))
         
         ;; Public functions
         (transfer (uint principal principal (optional (buff 34))) (response bool uint))
@@ -33,7 +33,7 @@
 ;; VARS & CONS
 (define-data-var cholo-deployer principal tx-sender)
 (define-data-var total-minted uint u0)
-(define-constant TOKEN_URI u"https://cholo.meme/bafkreibwuiavedbqjkvksvulm3focfv7ic2kd63c6lu5frtklteiys2mnq")
+(define-data-var token-uri (string-utf8 256) u"https://cholo.meme/bafkreibwuiavedbqjkvksvulm3focfv7ic2kd63c6lu5frtklteiys2mnq")
 (define-constant TOKEN_NAME "CHOLO")
 (define-constant TOKEN_SYMBOL "CHOLO")
 (define-constant TOKEN_DECIMALS u8)
@@ -62,7 +62,15 @@
 )
 
 (define-read-only (get-token-uri)
-  (ok (some TOKEN_URI))
+  (ok (some (var-get token-uri)))
+)
+
+(define-public (set-token-uri (new-uri (string-utf8 256)))
+  (begin
+    (asserts! (is-eq tx-sender (var-get cholo-deployer)) ERR_OWNER_ONLY)
+    (var-set token-uri new-uri)
+    (ok true)
+  )
 )
 
 ;; PUBLIC FUN
