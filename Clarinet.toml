@@ -14,3 +14,8 @@ check_checker = { trusted_sender = false, trusted_caller = false, callee_filter 
 path = "contracts/cholo.clar"
 clarity_version = 2
 epoch = 2.4
+
+[contracts.cholo-dao]
+path = "contracts/cholo-dao.clar"
+clarity_version = 2
+epoch = 2.4

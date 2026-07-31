@@ -18,6 +18,11 @@
 (define-constant MIN_TTL_BLOCKS             u10)     ;; min blocks until expiration
 (define-constant MAX_TTL_BLOCKS             u10000) ;; max blocks until expiration
 
+(define-trait sip-010-trait
+  (
+    (transfer (uint principal principal (optional (buff 34))) (response bool uint))
+  ))
+
 ;; =========================
 ;; Errors
 ;; =========================
@@ -52,7 +57,7 @@
     amount: uint,
     approvals: uint,
     executed: bool,
-    proposal-type: (string-ascii 16),
+    proposal-type: (string-ascii 20),
     new-signer: (optional principal),
     old-signer: (optional principal),
     token: (optional principal),
@@ -91,7 +96,7 @@
 ;; Helpers
 ;; =========================
 (define-read-only (is-signer (who principal))
-  (default-to false (map-get? signer-index {signer: who})))
+  (is-some (map-get? signer-index {signer: who})))
 
 (define-read-only (get-signer-count) (var-get signer-count))
 
@@ -148,8 +153,8 @@
                     (map-delete signer-index {signer: p})
                     (var-set signer-count (- count u1))
                     (ok true))
-                none (ok false))))
-      none (ok false))))
+                ERR_BAD_PARAMS)))
+      ERR_BAD_PARAMS)))
 
 (define-private (replace-signer-internal (oldp principal) (newp principal))
   (match (map-get? signer-index {signer: oldp})
@@ -159,7 +164,7 @@
         (map-delete signer-index {signer: oldp})
         (map-set signer-index {signer: newp} {idx: idx})
         (ok true))
-    none (ok false)))
+    ERR_BAD_PARAMS))
 
 ;; =========================
 ;; Public: Funds
@@ -173,7 +178,7 @@
 (define-public (create-proposal
   (recipient principal)
   (amount uint)
-  (proposal-type (string-ascii 16))
+  (proposal-type (string-ascii 20))
   (new-signer (optional principal))
   (old-signer (optional principal))
   (token (optional principal))
@@ -205,9 +210,9 @@
           new-required: new-required,
           new-delay: new-delay
         })
-      (var-set next-id (+ id u1))
+  (var-set next-id (+ id u1))
   (print (tuple (event "proposal-created") (id id) (by tx-sender) (type proposal-type)))
-  (ok id)))
+  (ok id))))
 
 (define-public (approve-proposal (id uint))
   (let ((p (map-get? proposals {id: id})))
@@ -226,7 +231,7 @@
           (ok true))
       ERR_NOT_FOUND)))
 
-(define-private (merge-proposal-approvals (p {recipient: principal, amount: uint, approvals: uint, executed: bool, proposal-type: (string-ascii 16), new-signer: (optional principal), old-signer: (optional principal), token: (optional principal), description: (string-utf8 256), expiration: uint, created: uint, new-required: (optional uint), new-delay: (optional uint)}) (new-approvals uint))
+(define-private (merge-proposal-approvals (p {recipient: principal, amount: uint, approvals: uint, executed: bool, proposal-type: (string-ascii 20), new-signer: (optional principal), old-signer: (optional principal), token: (optional principal), description: (string-utf8 256), expiration: uint, created: uint, new-required: (optional uint), new-delay: (optional uint)}) (new-approvals uint))
   {
     recipient: (get recipient p),
     amount: (get amount p),
@@ -246,7 +251,7 @@
 ;; =========================
 ;; Execute (checks-effects-interactions + timelock)
 ;; =========================
-(define-public (execute-proposal (id uint))
+(define-public (execute-proposal (id uint) (token-contract (optional <sip-010-trait>)))
   (let ((p? (map-get? proposals {id: id})))
     (match p?
       p
@@ -263,12 +268,12 @@
           (map-set proposals {id: id} (set-executed p true))
 
           ;; interactions:
-          (asserts! (dispatch-execution p) ERR_UNKNOWN_TYPE)
+          (try! (dispatch-execution p token-contract))
           (print (tuple (event "proposal-executed") (id id)))
           (ok true))
       ERR_NOT_FOUND)))
 
-(define-private (set-executed (p {recipient: principal, amount: uint, approvals: uint, executed: bool, proposal-type: (string-ascii 16), new-signer: (optional principal), old-signer: (optional principal), token: (optional principal), description: (string-utf8 256), expiration: uint, created: uint, new-required: (optional uint), new-delay: (optional uint)}) (flag bool))
+(define-private (set-executed (p {recipient: principal, amount: uint, approvals: uint, executed: bool, proposal-type: (string-ascii 20), new-signer: (optional principal), old-signer: (optional principal), token: (optional principal), description: (string-utf8 256), expiration: uint, created: uint, new-required: (optional uint), new-delay: (optional uint)}) (flag bool))
   {
     recipient: (get recipient p),
     amount: (get amount p),
@@ -285,64 +290,71 @@
     new-delay: (get new-delay p)
   })
 
-(define-private (dispatch-execution (p {recipient: principal, amount: uint, approvals: uint, executed: bool, proposal-type: (string-ascii 16), new-signer: (optional principal), old-signer: (optional principal), token: (optional principal), description: (string-utf8 256), expiration: uint, created: uint, new-required: (optional uint), new-delay: (optional uint)}))
+(define-private (dispatch-execution (p {recipient: principal, amount: uint, approvals: uint, executed: bool, proposal-type: (string-ascii 20), new-signer: (optional principal), old-signer: (optional principal), token: (optional principal), description: (string-utf8 256), expiration: uint, created: uint, new-required: (optional uint), new-delay: (optional uint)}) (token-contract (optional <sip-010-trait>)))
   (let ((t (get proposal-type p)))
     (if (is-eq t PROPOSAL_TRANSFER)
-        (unwrap! (stx-transfer? (get amount p) (as-contract tx-sender) (get recipient p)) ERR_BAD_PARAMS)
+        (as-contract (stx-transfer? (get amount p) tx-sender (get recipient p)))
     (if (is-eq t PROPOSAL_TOKEN_TRANSFER)
-        (unwrap! (token-transfer (get token p) (get amount p) (get recipient p)) ERR_BAD_PARAMS)
+        (token-transfer (get token p) token-contract (get amount p) (get recipient p))
     (if (is-eq t PROPOSAL_ADD_SIGNER)
         (match (get new-signer p)
-          some-p (unwrap! (add-signer-safe some-p) ERR_BAD_PARAMS)
-          none   false)
+          some-p (add-signer-safe some-p)
+          ERR_BAD_PARAMS)
     (if (is-eq t PROPOSAL_REMOVE_SIGNER)
         (match (get old-signer p)
-          some-p (unwrap! (remove-signer-safe some-p) ERR_BAD_PARAMS)
-          none   false)
+          some-p (remove-signer-safe some-p)
+          ERR_BAD_PARAMS)
     (if (is-eq t PROPOSAL_REPLACE_SIGNER)
         (match (get old-signer p)
           oldp
             (match (get new-signer p)
-              newp (unwrap! (replace-signer-safe oldp newp) ERR_BAD_PARAMS)
-              none false)
-          none false)
+              newp (replace-signer-safe oldp newp)
+              ERR_BAD_PARAMS)
+          ERR_BAD_PARAMS)
     (if (is-eq t PROPOSAL_SET_REQUIRED)
         (match (get new-required p)
           nr (begin (asserts! (> nr u0) ERR_BAD_PARAMS)
                     (asserts! (<= nr (var-get signer-count)) ERR_BAD_PARAMS)
                     (var-set required-sigs nr)
-                    true)
-          none false)
+                    (ok true))
+          ERR_BAD_PARAMS)
     (if (is-eq t PROPOSAL_SET_DELAY)
         (match (get new-delay p)
           nd (begin (asserts! (>= nd u0) ERR_BAD_PARAMS)
                     (var-set execution-delay nd)
-                    true)
-          none false)
-        false)))))))))
+                    (ok true))
+          ERR_BAD_PARAMS)
+        ERR_UNKNOWN_TYPE)))))))))
 
 ;; =========================
 ;; Token (SIP-010) transfer helper
 ;; =========================
-(define-private (token-transfer (token-contract (optional principal)) (amount uint) (recipient principal))
-  (match token-contract
-    some-token
-      (let ((res (as-contract (contract-call? some-token transfer amount (as-contract tx-sender) recipient none))))
-        (match res ok-val (ok ok-val) err-val (err err-val)))
-    none (ok false)))
+(define-private (token-transfer (expected-token (optional principal)) (token-contract (optional <sip-010-trait>)) (amount uint) (recipient principal))
+  (match expected-token
+    expected
+      (match token-contract
+        some-token
+          (begin
+            (asserts! (is-eq expected (contract-of some-token)) ERR_BAD_PARAMS)
+            (let ((res (as-contract (contract-call? some-token transfer amount tx-sender recipient none))))
+              (match res
+                ok-val (if ok-val (ok true) ERR_BAD_PARAMS)
+                err-val (err err-val))))
+        ERR_BAD_PARAMS)
+    ERR_BAD_PARAMS))
 
 ;; =========================
 ;; Signer ops (safe)
 ;; =========================
 (define-private (add-signer-safe (p principal))
   (match (map-get? signer-index {signer: p})
-    entry (ok false)  ;; already exists
-    none (add-signer-internal p)))
+    entry ERR_BAD_PARAMS
+    (add-signer-internal p)))
 
 (define-private (remove-signer-safe (p principal))
   (remove-signer-internal p))
 
 (define-private (replace-signer-safe (oldp principal) (newp principal))
   (match (map-get? signer-index {signer: newp})
-    entry (ok false)  ;; duplicate exists
-    none (replace-signer-internal oldp newp)))
+    entry ERR_BAD_PARAMS
+    (replace-signer-internal oldp newp)))
