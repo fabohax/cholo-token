@@ -19,3 +19,13 @@ epoch = 2.4
 path = "contracts/cholo-dao.clar"
 clarity_version = 2
 epoch = 2.4
+
+[contracts.cholo-swap]
+path = "contracts/cholo-swap.clar"
+clarity_version = 2
+epoch = 2.4
+
+[contracts.mock-token]
+path = "contracts/mock-token.clar"
+clarity_version = 2
+epoch = 2.4

@@ -69,4 +69,14 @@ plan:
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/cholo-dao.clar
             clarity-version: 2
+        - emulated-contract-publish:
+            contract-name: cholo-swap
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/cholo-swap.clar
+            clarity-version: 2
+        - emulated-contract-publish:
+            contract-name: mock-token
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/mock-token.clar
+            clarity-version: 2
       epoch: "2.4"

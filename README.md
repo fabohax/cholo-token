@@ -13,14 +13,15 @@ la comunidad.
 
 ## Descripción del repositorio
 
-Este proyecto de Clarinet contiene dos contratos en Clarity:
+Este proyecto de Clarinet contiene tres contratos principales en Clarity:
 
 | Contrato | Propósito |
 | --- | --- |
 | [`cholo.clar`](contracts/cholo.clar) | Token fungible compatible con SIP-010, con suministro fijo, transferencias, administración del propietario y metadatos. |
 | [`cholo-dao.clar`](contracts/cholo-dao.clar) | Tesorería multifirma para la DAO, con propuestas, aprobaciones de firmantes, vencimiento, demora de ejecución, transferencias de STX y SIP-010, y administración del cuórum y los firmantes. |
+| [`cholo-swap.clar`](contracts/cholo-swap.clar) | Venta de CHOLO respaldada por inventario, con pagos en STX, sBTC o USDCx. |
 
-El repositorio también incluye una suite de pruebas para el contrato de la DAO
+El repositorio también incluye una suite de pruebas para la DAO y el swap,
 basada en Vitest y Clarinet SDK.
 
 ## Contrato del token
@@ -38,6 +39,7 @@ basada en Vitest y Clarinet SDK.
 | Suministro legible | `8,888,888,888.88888888 CHOLO` |
 | Destinatario inicial | Cuenta que despliega el contrato |
 | URI del token | `https://cholo.meme/bafkreibwuiavedbqjkvksvulm3focfv7ic2kd63c6lu5frtklteiys2mnq` |
+| Dirección | `SP193GXQTNHVV9WSAPHAB89M6R9QSEXZKS3774CMD.cholo` |
 
 El suministro completo se acuña a favor de la cuenta que publica el contrato.
 Aunque el contrato expone la función `mint`, la acuñación inicial ya alcanza
@@ -55,6 +57,87 @@ modifique la lógica del suministro.
 
 Las funciones de solo lectura permiten consultar saldos, suministro total,
 nombre, símbolo, decimales y URI del token.
+
+## Swap de CHOLO
+
+`cholo-swap.clar` permite comprar CHOLO con STX, sBTC o USDCx. Antes de abrir
+las compras, el propietario debe transferir CHOLO al principal del contrato,
+configurar la tesorería y establecer la tasa de cada activo.
+
+Cada tasa usa una fracción `numerator / denominator` aplicada a unidades base:
+
+```text
+cholo-out = payment-amount * numerator / denominator
+```
+
+Las tasas no se inicializan con un precio predeterminado: hasta que el
+propietario configura una tasa válida, la compra correspondiente permanece
+deshabilitada. Es importante calcular las tasas teniendo en cuenta los
+decimales de ambos activos. Por ejemplo, si STX usa 6 decimales y CHOLO usa 8,
+una tasa de `u10000 / u1` entrega 100 CHOLO por 1 STX:
+
+```text
+1,000,000 micro-STX * 10,000 = 10,000,000,000 unidades base de CHOLO
+                                      = 100.00000000 CHOLO
+```
+
+Las compras aceptan `min-cholo-out` para proteger al comprador frente a
+cambios de tasa. Los pagos se envían directamente a la tesorería configurada;
+el contrato solo custodia el inventario de CHOLO. Las compras con sBTC y USDCx
+también comprueban que el contrato SIP-010 recibido coincida exactamente con
+el principal permitido por el propietario.
+
+Funciones públicas principales:
+
+| Función | Descripción |
+| --- | --- |
+| `buy-with-stx` | Compra CHOLO pagando STX. |
+| `buy-with-sbtc` | Compra CHOLO pagando el contrato sBTC permitido. |
+| `buy-with-usdcx` | Compra CHOLO pagando el contrato USDCx permitido. |
+| `set-stx-rate` | Configura la tasa de STX. |
+| `set-sbtc-config` | Configura el principal y la tasa de sBTC. |
+| `set-usdcx-config` | Configura el principal y la tasa de USDCx. |
+| `set-treasury` | Cambia el destino de los pagos. |
+| `set-paused` | Pausa o reactiva todas las compras. |
+| `withdraw-cholo` | Retira inventario de CHOLO. |
+
+### Preparación del swap
+
+El siguiente ejemplo configura la tesorería, habilita una tasa de STX y
+deposita inventario. Los principales de sBTC y USDCx deben reemplazarse por los
+contratos oficiales de la red elegida.
+
+```clarity
+;; Enviar 1,000 CHOLO al inventario del swap.
+(contract-call? .cholo transfer
+  u100000000000
+  tx-sender
+  .cholo-swap
+  none)
+
+;; Enviar todos los pagos a la tesorería de la DAO.
+(contract-call? .cholo-swap set-treasury .cholo-dao)
+
+;; 1 STX = 100 CHOLO, suponiendo 6 decimales para STX y 8 para CHOLO.
+(contract-call? .cholo-swap set-stx-rate u10000 u1)
+
+;; Configurar los contratos permitidos y sus tasas.
+(contract-call? .cholo-swap set-sbtc-config .sbtc-token u1000000 u1)
+(contract-call? .cholo-swap set-usdcx-config .usdcx-token u10000 u1)
+```
+
+Una compra con STX que exige recibir al menos 100 CHOLO:
+
+```clarity
+(contract-call? .cholo-swap buy-with-stx u1000000 u10000000000)
+```
+
+Antes de enviar una compra, una aplicación puede consultar `quote-stx`,
+`quote-sbtc` o `quote-usdcx` y usar el resultado —ajustado por su tolerancia de
+deslizamiento— como `min-cholo-out`.
+
+`mock-token.clar` existe únicamente como activo SIP-010 auxiliar para las
+pruebas locales; no debe incluirse en despliegues públicos.
 
 ## Tesorería de la DAO
 
@@ -135,7 +218,7 @@ suite con npm.
 ### Instalación
 
 ```bash
-git clone <url-del-repositorio>
+git clone https://github.com/fabohax/cholo-token
 cd cholo-token
 npm install
 ```
@@ -158,6 +241,8 @@ La suite cubre:
 - Los cambios de cuórum
 - La incorporación de firmantes y la consistencia de sus índices
 - Los tipos de propuesta desconocidos
+- Las compras de CHOLO con STX, sBTC y USDCx
+- La protección de salida mínima, la pausa y los permisos administrativos
 
 Para generar informes de cobertura de Clarity y costos de ejecución:
 
@@ -185,14 +270,17 @@ npx tsc --noEmit
 ├── Clarinet.toml
 ├── contracts/
 │   ├── cholo.clar
-│   └── cholo-dao.clar
+│   ├── cholo-dao.clar
+│   ├── cholo-swap.clar
+│   └── mock-token.clar
 ├── deployments/
 │   ├── default.mainnet-plan.yaml
 │   ├── default.testnet-plan.yaml
 │   └── default.simnet-plan.yaml
 ├── settings/
 ├── tests/
-│   └── cholo-dao.test.ts
+│   ├── cholo-dao.test.ts
+│   └── cholo-swap.test.ts
 ├── package.json
 ├── tsconfig.json
 └── vitest.config.js
@@ -205,12 +293,25 @@ transmitirlos, revisa los emisores esperados, los puntos de conexión de la red,
 las comisiones, el orden de los contratos y las transacciones generadas.
 
 Los planes actuales de mainnet y testnet solo publican `cholo.clar`. Regenera o
-actualiza estos planes antes de desplegar `cholo-dao.clar`.
+actualiza estos planes antes de desplegar `cholo-dao.clar` o
+`cholo-swap.clar`. El token CHOLO debe publicarse antes que el swap porque este
+último realiza llamadas estáticas a `.cholo`. No incluyas `mock-token.clar` en
+un despliegue público.
+
+Después del despliegue, y antes de habilitar compras:
+
+1. Verifica los principales oficiales de sBTC y USDCx para la red.
+2. Define el principal de la tesorería.
+3. Calcula y revisa las tasas usando unidades base.
+4. Transfiere al swap únicamente el inventario de CHOLO destinado a la venta.
+5. Realiza compras pequeñas de prueba para cada activo.
+6. Transfiere la propiedad del swap al principal administrativo definitivo si
+   corresponde.
 
 Nunca despliegues directamente desde un árbol de trabajo sin revisar. Ejecuta
 la suite completa de pruebas y consigue una auditoría de seguridad
-independiente de Clarity antes de administrar activos mediante la tesorería de
-la DAO.
+independiente de Clarity antes de administrar activos mediante la tesorería o
+el swap.
 
 ## Códigos de error de los contratos
 
@@ -238,6 +339,19 @@ la DAO.
 | `u106` | Se alcanzó el número mínimo de firmantes |
 | `u107` | Parámetros no válidos o bloqueo temporal aún vigente |
 | `u108` | Tipo de propuesta desconocido |
+
+### Swap
+
+| Código | Significado |
+| --- | --- |
+| `u200` | Operación exclusiva del propietario |
+| `u201` | Cantidad de entrada o salida no válida |
+| `u202` | Numerador o denominador de tasa no válido |
+| `u203` | El swap está pausado |
+| `u204` | La salida calculada es menor que `min-cholo-out` |
+| `u205` | El contrato SIP-010 recibido no es el token permitido |
+| `u206` | El activo solicitado todavía no está configurado |
+| `u207` | Principal no válido |
 
 Las operaciones STX o SIP-010 subyacentes pueden devolver sus propios códigos
 de error del contrato o del entorno de ejecución.
