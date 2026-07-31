@@ -70,6 +70,13 @@ Cada tasa usa una fracción `numerator / denominator` aplicada a unidades base:
 cholo-out = payment-amount * numerator / denominator
 ```
 
+Los únicos activos de pago admitidos son STX nativo, el contrato oficial de
+sBTC en mainnet
+`SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token` y el contrato oficial
+de USDCx en mainnet
+`SP120SBRBQJ00MCWS7TM5R8WJNTTKD5K0HFRC2CNE.usdcx`. El propietario no puede
+configurar otros contratos SIP-010 en su lugar.
+
 Las tasas no se inicializan con un precio predeterminado: hasta que el
 propietario configura una tasa válida, la compra correspondiente permanece
 deshabilitada. Es importante calcular las tasas teniendo en cuenta los
@@ -121,9 +128,11 @@ contratos oficiales de la red elegida.
 ;; 1 STX = 100 CHOLO, suponiendo 6 decimales para STX y 8 para CHOLO.
 (contract-call? .cholo-swap set-stx-rate u10000 u1)
 
-;; Configurar los contratos permitidos y sus tasas.
-(contract-call? .cholo-swap set-sbtc-config .sbtc-token u1000000 u1)
-(contract-call? .cholo-swap set-usdcx-config .usdcx-token u10000 u1)
+;; Configurar los contratos oficiales permitidos y sus tasas.
+(contract-call? .cholo-swap set-sbtc-config
+  'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token u1000000 u1)
+(contract-call? .cholo-swap set-usdcx-config
+  'SP120SBRBQJ00MCWS7TM5R8WJNTTKD5K0HFRC2CNE.usdcx u10000 u1)
 ```
 
 Una compra con STX que exige recibir al menos 100 CHOLO:

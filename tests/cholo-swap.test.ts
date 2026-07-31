@@ -2,6 +2,8 @@ import { Cl } from "@stacks/transactions";
 import { describe, expect, it } from "vitest";
 
 const SWAP = "cholo-swap";
+const OFFICIAL_SBTC = "SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token";
+const OFFICIAL_USDCX = "SP120SBRBQJ00MCWS7TM5R8WJNTTKD5K0HFRC2CNE.usdcx";
 
 function setup() {
   const accounts = simnet.getAccounts();
@@ -29,7 +31,7 @@ function setup() {
     simnet.callPublicFn(
       SWAP,
       "set-sbtc-config",
-      [Cl.principal(mockPrincipal), Cl.uint(2), Cl.uint(1)],
+      [Cl.principal(OFFICIAL_SBTC), Cl.uint(2), Cl.uint(1)],
       deployer,
     ).result,
   ).toBeOk(Cl.bool(true));
@@ -37,7 +39,7 @@ function setup() {
     simnet.callPublicFn(
       SWAP,
       "set-usdcx-config",
-      [Cl.principal(mockPrincipal), Cl.uint(50), Cl.uint(1)],
+      [Cl.principal(OFFICIAL_USDCX), Cl.uint(50), Cl.uint(1)],
       deployer,
     ).result,
   ).toBeOk(Cl.bool(true));
@@ -65,8 +67,8 @@ describe("cholo-swap", () => {
     ).toBeOk(Cl.uint(100_000));
   });
 
-  it("buys with configured sBTC and sends payment to treasury", () => {
-    const { buyer, treasury, deployer } = setup();
+  it("rejects a non-sBTC token passed to the sBTC entry point", () => {
+    const { buyer, deployer } = setup();
     expect(
       simnet.callPublicFn("mock-token", "mint", [Cl.uint(1_000), Cl.principal(buyer)], deployer)
         .result,
@@ -79,13 +81,10 @@ describe("cholo-swap", () => {
         [Cl.uint(1_000), Cl.uint(2_000), Cl.contractPrincipal(deployer, "mock-token")],
         buyer,
       ).result,
-    ).toBeOk(Cl.uint(2_000));
-    expect(
-      simnet.callReadOnlyFn("mock-token", "get-balance", [Cl.principal(treasury)], buyer).result,
-    ).toBeOk(Cl.uint(1_000));
+    ).toBeErr(Cl.uint(205));
   });
 
-  it("buys with configured USDCx", () => {
+  it("rejects a non-USDCx token passed to the USDCx entry point", () => {
     const { buyer, deployer } = setup();
     expect(
       simnet.callPublicFn("mock-token", "mint", [Cl.uint(100), Cl.principal(buyer)], deployer)
@@ -99,7 +98,28 @@ describe("cholo-swap", () => {
         [Cl.uint(100), Cl.uint(5_000), Cl.contractPrincipal(deployer, "mock-token")],
         buyer,
       ).result,
-    ).toBeOk(Cl.uint(5_000));
+    ).toBeErr(Cl.uint(205));
+  });
+
+  it("does not let the owner configure arbitrary SIP-010 contracts", () => {
+    const { deployer, mockPrincipal } = setup();
+
+    expect(
+      simnet.callPublicFn(
+        SWAP,
+        "set-sbtc-config",
+        [Cl.principal(mockPrincipal), Cl.uint(1), Cl.uint(1)],
+        deployer,
+      ).result,
+    ).toBeErr(Cl.uint(205));
+    expect(
+      simnet.callPublicFn(
+        SWAP,
+        "set-usdcx-config",
+        [Cl.principal(mockPrincipal), Cl.uint(1), Cl.uint(1)],
+        deployer,
+      ).result,
+    ).toBeErr(Cl.uint(205));
   });
 
   it("enforces minimum output and pause state", () => {

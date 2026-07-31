@@ -17,6 +17,8 @@
 (define-constant ERR_INVALID_PRINCIPAL   (err u207))
 
 (define-constant BURN_ADDRESS 'SP000000000000000000002Q6VF78)
+(define-constant OFFICIAL_SBTC 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token)
+(define-constant OFFICIAL_USDCX 'SP120SBRBQJ00MCWS7TM5R8WJNTTKD5K0HFRC2CNE.usdcx)
 
 (define-data-var owner principal tx-sender)
 (define-data-var treasury principal tx-sender)
@@ -154,7 +156,7 @@
 (define-public (set-sbtc-config (token principal) (numerator uint) (denominator uint))
   (begin
     (try! (assert-owner))
-    (asserts! (not (is-eq token BURN_ADDRESS)) ERR_INVALID_PRINCIPAL)
+    (asserts! (is-eq token OFFICIAL_SBTC) ERR_WRONG_TOKEN)
     (try! (validate-rate numerator denominator))
     (var-set sbtc-contract (some token))
     (var-set sbtc-rate-numerator numerator)
@@ -164,7 +166,7 @@
 (define-public (set-usdcx-config (token principal) (numerator uint) (denominator uint))
   (begin
     (try! (assert-owner))
-    (asserts! (not (is-eq token BURN_ADDRESS)) ERR_INVALID_PRINCIPAL)
+    (asserts! (is-eq token OFFICIAL_USDCX) ERR_WRONG_TOKEN)
     (try! (validate-rate numerator denominator))
     (var-set usdcx-contract (some token))
     (var-set usdcx-rate-numerator numerator)
