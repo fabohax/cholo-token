@@ -2,11 +2,10 @@ import { Cl, type ClarityValue } from "@stacks/transactions";
 import { describe, expect, it } from "vitest";
 
 const DAO = "cholo-dao";
-const SIGNERS = [
-  "SP193GXQTNHVV9WSAPHAB89M6R9QSEXZKS3774CMD",
-  "ST2YDY8H45J5HTN5M0H2XQH0JFCR4RWCA92QCZ7W6",
-  "ST4ZB0M2ZKP1HRZPVAPE4X14K689X22N29YQQBG2",
-] as const;
+
+function initialSigner(): string {
+  return simnet.getAccounts().get("deployer")!;
+}
 
 function proposalArgs(
   proposalType = "transfer",
@@ -24,7 +23,7 @@ function proposalArgs(
   const accounts = simnet.getAccounts();
   return [
     Cl.principal(options.recipient ?? accounts.get("wallet_2")!),
-    Cl.uint(options.amount ?? 0),
+    Cl.uint(options.amount ?? (proposalType === "transfer" ? 1 : 0)),
     Cl.stringAscii(proposalType),
     options.newSigner ? Cl.some(Cl.principal(options.newSigner)) : Cl.none(),
     options.oldSigner ? Cl.some(Cl.principal(options.oldSigner)) : Cl.none(),
@@ -48,46 +47,44 @@ function createProposal(
     DAO,
     "create-proposal",
     proposalArgs(proposalType, simnet.blockHeight + 50, options),
-    SIGNERS[0],
+    initialSigner(),
   );
   expect(response.result).toBeOk(Cl.uint(0));
 }
 
 function approveByQuorum(): void {
-  for (const signer of SIGNERS) {
-    const response = simnet.callPublicFn(
-      DAO,
-      "approve-proposal",
-      [Cl.uint(0)],
-      signer,
-    );
-    expect(response.result).toBeOk(Cl.bool(true));
-  }
+  const response = simnet.callPublicFn(
+    DAO,
+    "approve-proposal",
+    [Cl.uint(0)],
+    initialSigner(),
+  );
+  expect(response.result).toBeOk(Cl.bool(true));
 }
 
 describe("cholo-dao", () => {
-  it("initializes five signers and computes a 51% quorum", () => {
+  it("bootstraps the deployer as the sole signer with quorum one", () => {
     const count = simnet.callReadOnlyFn(
       DAO,
       "get-signer-count",
       [],
-      SIGNERS[0],
+      initialSigner(),
     );
     const quorum = simnet.callReadOnlyFn(
       DAO,
       "get-required-sigs",
       [],
-      SIGNERS[0],
+      initialSigner(),
     );
     const signer = simnet.callReadOnlyFn(
       DAO,
       "is-signer",
-      [Cl.principal(SIGNERS[0])],
-      SIGNERS[0],
+      [Cl.principal(initialSigner())],
+      initialSigner(),
     );
 
-    expect(count.result).toBeUint(5);
-    expect(quorum.result).toBeUint(3);
+    expect(count.result).toBeUint(1);
+    expect(quorum.result).toBeUint(1);
     expect(signer.result).toBeBool(true);
   });
 
@@ -108,13 +105,13 @@ describe("cholo-dao", () => {
       DAO,
       "create-proposal",
       proposalArgs("transfer", simnet.blockHeight + 9),
-      SIGNERS[0],
+      initialSigner(),
     );
     const tooLate = simnet.callPublicFn(
       DAO,
       "create-proposal",
       proposalArgs("transfer", simnet.blockHeight + 10_002),
-      SIGNERS[0],
+      initialSigner(),
     );
 
     expect(tooSoon.result).toBeErr(Cl.uint(107));
@@ -128,13 +125,13 @@ describe("cholo-dao", () => {
       DAO,
       "approve-proposal",
       [Cl.uint(0)],
-      SIGNERS[0],
+      initialSigner(),
     );
     const duplicate = simnet.callPublicFn(
       DAO,
       "approve-proposal",
       [Cl.uint(0)],
-      SIGNERS[0],
+      initialSigner(),
     );
     const outsider = simnet.callPublicFn(
       DAO,
@@ -155,7 +152,7 @@ describe("cholo-dao", () => {
       DAO,
       "execute-proposal",
       [Cl.uint(0), Cl.none()],
-      SIGNERS[0],
+      initialSigner(),
     );
     expect(beforeQuorum.result).toBeErr(Cl.uint(102));
 
@@ -164,7 +161,7 @@ describe("cholo-dao", () => {
       DAO,
       "execute-proposal",
       [Cl.uint(0), Cl.none()],
-      SIGNERS[0],
+      initialSigner(),
     );
     expect(beforeDelay.result).toBeErr(Cl.uint(107));
 
@@ -173,13 +170,13 @@ describe("cholo-dao", () => {
       DAO,
       "execute-proposal",
       [Cl.uint(0), Cl.none()],
-      SIGNERS[0],
+      initialSigner(),
     );
     const replay = simnet.callPublicFn(
       DAO,
       "execute-proposal",
       [Cl.uint(0), Cl.none()],
-      SIGNERS[0],
+      initialSigner(),
     );
 
     expect(executed.result).toBeOk(Cl.bool(true));
@@ -207,7 +204,7 @@ describe("cholo-dao", () => {
       DAO,
       "execute-proposal",
       [Cl.uint(0), Cl.none()],
-      SIGNERS[0],
+      initialSigner(),
     );
     expect(executed.result).toBeOk(Cl.bool(true));
   });
@@ -244,7 +241,7 @@ describe("cholo-dao", () => {
       DAO,
       "execute-proposal",
       [Cl.uint(0), Cl.some(Cl.contractPrincipal(deployer, "cholo"))],
-      SIGNERS[0],
+      initialSigner(),
     );
     const balance = simnet.callReadOnlyFn(
       "cholo",
@@ -258,7 +255,7 @@ describe("cholo-dao", () => {
   });
 
   it("changes the fixed quorum through an approved proposal", () => {
-    createProposal("set-required-sigs", { newRequired: 4 });
+    createProposal("set-required-sigs", { newRequired: 1 });
     approveByQuorum();
     simnet.mineEmptyBlocks(10);
 
@@ -266,68 +263,164 @@ describe("cholo-dao", () => {
       DAO,
       "execute-proposal",
       [Cl.uint(0), Cl.none()],
-      SIGNERS[0],
+      initialSigner(),
     );
     const quorum = simnet.callReadOnlyFn(
       DAO,
       "get-required-sigs",
       [],
-      SIGNERS[0],
+      initialSigner(),
     );
 
     expect(executed.result).toBeOk(Cl.bool(true));
-    expect(quorum.result).toBeUint(4);
+    expect(quorum.result).toBeUint(1);
   });
 
   it("adds a signer and keeps both signer indexes consistent", () => {
     const newSigner = simnet.getAccounts().get("wallet_3")!;
     createProposal("add-signer", { newSigner });
     approveByQuorum();
-    simnet.mineEmptyBlocks(10);
 
     const executed = simnet.callPublicFn(
       DAO,
       "execute-proposal",
       [Cl.uint(0), Cl.none()],
-      SIGNERS[0],
+      initialSigner(),
     );
     const count = simnet.callReadOnlyFn(
       DAO,
       "get-signer-count",
       [],
-      SIGNERS[0],
+      initialSigner(),
     );
     const signer = simnet.callReadOnlyFn(
       DAO,
       "is-signer",
       [Cl.principal(newSigner)],
-      SIGNERS[0],
+      initialSigner(),
     );
     const indexedSigner = simnet.callReadOnlyFn(
       DAO,
       "get-signer",
-      [Cl.uint(5)],
-      SIGNERS[0],
+      [Cl.uint(1)],
+      initialSigner(),
     );
 
     expect(executed.result).toBeOk(Cl.bool(true));
-    expect(count.result).toBeUint(6);
+    expect(count.result).toBeUint(2);
     expect(signer.result).toBeBool(true);
     expect(indexedSigner.result).toBeSome(Cl.principal(newSigner));
   });
 
-  it("rejects an unknown proposal type at execution", () => {
-    createProposal("not-a-real-type");
-    approveByQuorum();
-    simnet.mineEmptyBlocks(10);
+  it("restores the timelock after the bootstrap signer adds member two", () => {
+    const accounts = simnet.getAccounts();
+    const second = accounts.get("wallet_1")!;
+    const third = accounts.get("wallet_2")!;
 
+    createProposal("add-signer", { newSigner: second });
+    approveByQuorum();
+    expect(
+      simnet.callPublicFn(
+        DAO,
+        "execute-proposal",
+        [Cl.uint(0), Cl.none()],
+        initialSigner(),
+      ).result,
+    ).toBeOk(Cl.bool(true));
+
+    const created = simnet.callPublicFn(
+      DAO,
+      "create-proposal",
+      proposalArgs("add-signer", simnet.blockHeight + 50, { newSigner: third }),
+      initialSigner(),
+    );
+    expect(created.result).toBeOk(Cl.uint(1));
+    expect(
+      simnet.callPublicFn(
+        DAO,
+        "approve-proposal",
+        [Cl.uint(1)],
+        initialSigner(),
+      ).result,
+    ).toBeOk(Cl.bool(true));
+    expect(
+      simnet.callPublicFn(
+        DAO,
+        "approve-proposal",
+        [Cl.uint(1)],
+        second,
+      ).result,
+    ).toBeOk(Cl.bool(true));
+
+    expect(
+      simnet.callPublicFn(
+        DAO,
+        "execute-proposal",
+        [Cl.uint(1), Cl.none()],
+        initialSigner(),
+      ).result,
+    ).toBeErr(Cl.uint(107));
+  });
+
+  it("protects the bootstrap signer and rejects duplicate growth proposals", () => {
+    expect(
+      simnet.callPublicFn(
+        DAO,
+        "create-proposal",
+        proposalArgs("remove-signer", simnet.blockHeight + 50, {
+          oldSigner: initialSigner(),
+        }),
+        initialSigner(),
+      ).result,
+    ).toBeErr(Cl.uint(106));
+
+    expect(
+      simnet.callPublicFn(
+        DAO,
+        "create-proposal",
+        proposalArgs("add-signer", simnet.blockHeight + 50, {
+          newSigner: initialSigner(),
+        }),
+        initialSigner(),
+      ).result,
+    ).toBeErr(Cl.uint(107));
+  });
+
+  it("rejects malformed proposals at creation", () => {
     const response = simnet.callPublicFn(
       DAO,
-      "execute-proposal",
-      [Cl.uint(0), Cl.none()],
-      SIGNERS[0],
+      "create-proposal",
+      proposalArgs("not-a-real-type"),
+      initialSigner(),
     );
-
     expect(response.result).toBeErr(Cl.uint(108));
+
+    expect(
+      simnet.callPublicFn(
+        DAO,
+        "create-proposal",
+        proposalArgs("transfer", simnet.blockHeight + 50, { amount: 0 }),
+        initialSigner(),
+      ).result,
+    ).toBeErr(Cl.uint(107));
+
+    expect(
+      simnet.callPublicFn(
+        DAO,
+        "create-proposal",
+        proposalArgs("token-transfer", simnet.blockHeight + 50, { amount: 1 }),
+        initialSigner(),
+      ).result,
+    ).toBeErr(Cl.uint(107));
+  });
+
+  it("rejects zero deposits and authorizes before proposal lookup", () => {
+    const outsider = simnet.getAccounts().get("wallet_1")!;
+    expect(
+      simnet.callPublicFn(DAO, "deposit", [Cl.uint(0)], outsider).result,
+    ).toBeErr(Cl.uint(107));
+    expect(
+      simnet.callPublicFn(DAO, "approve-proposal", [Cl.uint(999)], outsider).result,
+    ).toBeErr(Cl.uint(100));
   });
 });

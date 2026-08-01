@@ -14,7 +14,7 @@
 (define-constant PROPOSAL_SET_REQUIRED      "set-required-sigs")
 (define-constant PROPOSAL_SET_DELAY         "set-exec-delay")
 
-(define-constant MIN_SIGNERS                u3)
+(define-constant MIN_SIGNERS                u1)
 (define-constant MIN_TTL_BLOCKS             u10)     ;; min blocks until expiration
 (define-constant MAX_TTL_BLOCKS             u10000) ;; max blocks until expiration
 
@@ -71,25 +71,12 @@
 (define-map approvals {id: uint, signer: principal} bool)
 
 ;; =========================
-;; Init signers
+;; Bootstrap with the deployer. The signer set grows through approved proposals.
 ;; =========================
 (begin
-  (map-set signers {idx: u0} 'SP193GXQTNHVV9WSAPHAB89M6R9QSEXZKS3774CMD) ;; @fabohax
-  (map-set signer-index {signer: 'SP193GXQTNHVV9WSAPHAB89M6R9QSEXZKS3774CMD} {idx: u0})
-
-  (map-set signers {idx: u1} 'ST2YDY8H45J5HTN5M0H2XQH0JFCR4RWCA92QCZ7W6) ;; @anthozg
-  (map-set signer-index {signer: 'ST2YDY8H45J5HTN5M0H2XQH0JFCR4RWCA92QCZ7W6} {idx: u1})
-
-  (map-set signers {idx: u2} 'ST4ZB0M2ZKP1HRZPVAPE4X14K689X22N29YQQBG2) ;; @sirohxi
-  (map-set signer-index {signer: 'ST4ZB0M2ZKP1HRZPVAPE4X14K689X22N29YQQBG2} {idx: u2})
-
-  (map-set signers {idx: u3} 'ST9E6QNWPX7WVYJWTDAJ4WMXDNFHFSFKF91N68Z7) ;; @navynox
-  (map-set signer-index {signer: 'ST9E6QNWPX7WVYJWTDAJ4WMXDNFHFSFKF91N68Z7} {idx: u3})
-
-  (map-set signers {idx: u4} 'SP3KR4YF7YRCMP1XGQ7T5Q2AV2CV6EYE3AGSB27ES) ;; @marsettil
-  (map-set signer-index {signer: 'SP3KR4YF7YRCMP1XGQ7T5Q2AV2CV6EYE3AGSB27ES} {idx: u4})
-
-  (var-set signer-count u5)
+  (map-set signers {idx: u0} tx-sender)
+  (map-set signer-index {signer: tx-sender} {idx: u0})
+  (var-set signer-count u1)
 )
 
 ;; =========================
@@ -170,7 +157,63 @@
 ;; Public: Funds
 ;; =========================
 (define-public (deposit (amount uint))
-  (stx-transfer? amount tx-sender (as-contract tx-sender)))
+  (begin
+    (asserts! (> amount u0) ERR_BAD_PARAMS)
+    (stx-transfer? amount tx-sender (as-contract tx-sender))))
+
+;; Reject malformed proposals before they consume an id or enter governance.
+(define-private (validate-proposal-params
+  (amount uint)
+  (proposal-type (string-ascii 20))
+  (new-signer (optional principal))
+  (old-signer (optional principal))
+  (token (optional principal))
+  (new-required (optional uint))
+  (new-delay (optional uint))
+)
+  (if (is-eq proposal-type PROPOSAL_TRANSFER)
+      (begin
+        (asserts! (> amount u0) ERR_BAD_PARAMS)
+        (ok true))
+  (if (is-eq proposal-type PROPOSAL_TOKEN_TRANSFER)
+      (begin
+        (asserts! (> amount u0) ERR_BAD_PARAMS)
+        (asserts! (is-some token) ERR_BAD_PARAMS)
+        (ok true))
+  (if (is-eq proposal-type PROPOSAL_ADD_SIGNER)
+      (match new-signer
+        signer (begin
+          (asserts! (not (is-signer signer)) ERR_BAD_PARAMS)
+          (ok true))
+        ERR_BAD_PARAMS)
+  (if (is-eq proposal-type PROPOSAL_REMOVE_SIGNER)
+      (match old-signer
+        signer (begin
+          (asserts! (is-signer signer) ERR_BAD_PARAMS)
+          (asserts! (> (var-get signer-count) MIN_SIGNERS) ERR_MIN_SIGNERS)
+          (ok true))
+        ERR_BAD_PARAMS)
+  (if (is-eq proposal-type PROPOSAL_REPLACE_SIGNER)
+      (match old-signer
+        oldp (match new-signer
+          newp (begin
+            (asserts! (is-signer oldp) ERR_BAD_PARAMS)
+            (asserts! (not (is-signer newp)) ERR_BAD_PARAMS)
+            (ok true))
+          ERR_BAD_PARAMS)
+        ERR_BAD_PARAMS)
+  (if (is-eq proposal-type PROPOSAL_SET_REQUIRED)
+      (match new-required
+        required (begin
+          (asserts! (> required u0) ERR_BAD_PARAMS)
+          (asserts! (<= required (var-get signer-count)) ERR_BAD_PARAMS)
+          (ok true))
+        ERR_BAD_PARAMS)
+  (if (is-eq proposal-type PROPOSAL_SET_DELAY)
+      (match new-delay
+        delay (ok true)
+        ERR_BAD_PARAMS)
+      ERR_UNKNOWN_TYPE))))))))
 
 ;; =========================
 ;; Proposals
@@ -192,6 +235,7 @@
     ;; expiration sanity: now + MIN_TTL <= expiration <= now + MAX_TTL
     (asserts! (>= expiration (+ block-height MIN_TTL_BLOCKS)) ERR_BAD_PARAMS)
     (asserts! (<= (- expiration block-height) MAX_TTL_BLOCKS) ERR_BAD_PARAMS)
+    (try! (validate-proposal-params amount proposal-type new-signer old-signer token new-required new-delay))
 
     (let ((id (var-get next-id)))
       (map-set proposals {id: id}
@@ -215,11 +259,12 @@
   (ok id))))
 
 (define-public (approve-proposal (id uint))
-  (let ((p (map-get? proposals {id: id})))
-    (match p
-      prop
-        (begin
-          (asserts! (is-signer tx-sender) ERR_NOT_SIGNER)
+  (begin
+    (asserts! (is-signer tx-sender) ERR_NOT_SIGNER)
+    (let ((p (map-get? proposals {id: id})))
+      (match p
+        prop
+          (begin
           (asserts! (not (get executed prop)) ERR_ALREADY_EXECUTED)
           (asserts! (is-none (map-get? approvals {id: id, signer: tx-sender})) ERR_ALREADY_APPROVED)
           (asserts! (> (get expiration prop) block-height) ERR_PROPOSAL_EXPIRED)
@@ -228,8 +273,8 @@
           (map-set proposals {id: id}
             (merge-proposal-approvals prop (+ (get approvals prop) u1)))
           (print (tuple (event "proposal-approved") (id id) (by tx-sender)))
-          (ok true))
-      ERR_NOT_FOUND)))
+            (ok true))
+        ERR_NOT_FOUND))))
 
 (define-private (merge-proposal-approvals (p {recipient: principal, amount: uint, approvals: uint, executed: bool, proposal-type: (string-ascii 20), new-signer: (optional principal), old-signer: (optional principal), token: (optional principal), description: (string-utf8 256), expiration: uint, created: uint, new-required: (optional uint), new-delay: (optional uint)}) (new-approvals uint))
   {
@@ -257,7 +302,13 @@
       p
         (let (
               (need (get-required-sigs))
-              (delay (var-get execution-delay))
+              ;; Let the deployer bootstrap member two without waiting for a
+              ;; devnet/PoX tenure. All later governance keeps the timelock.
+              (delay (if (and
+                           (is-eq (get proposal-type p) PROPOSAL_ADD_SIGNER)
+                           (is-eq (var-get signer-count) u1))
+                         u0
+                         (var-get execution-delay)))
              )
           (asserts! (>= (get approvals p) need) ERR_NOT_ENOUGH_APPROVALS)
           (asserts! (not (get executed p)) ERR_ALREADY_EXECUTED)

@@ -7,11 +7,10 @@ const RUNS = 100;
 const MAX_SUPPLY = 888_888_888_888_888_888n;
 const DAO = "cholo-dao";
 const SWAP = "cholo-swap";
-const SIGNERS = [
-  "SP193GXQTNHVV9WSAPHAB89M6R9QSEXZKS3774CMD",
-  "ST2YDY8H45J5HTN5M0H2XQH0JFCR4RWCA92QCZ7W6",
-  "ST4ZB0M2ZKP1HRZPVAPE4X14K689X22N29YQQBG2",
-] as const;
+
+function daoSigner(): string {
+  return simnet.getAccounts().get("deployer")!;
+}
 
 function samples<T>(arbitrary: fc.Arbitrary<T>, seedOffset = 0): T[] {
   return fc.sample(arbitrary, { seed: SEED + seedOffset, numRuns: RUNS });
@@ -266,7 +265,7 @@ describe("contract fuzz invariants", () => {
           Cl.none(),
           Cl.none(),
         ],
-        SIGNERS[0],
+        daoSigner(),
       );
 
       if (ttl >= 10 && ttl <= 10_000) {
@@ -300,18 +299,18 @@ describe("contract fuzz invariants", () => {
           Cl.none(),
           Cl.some(Cl.uint(0)),
         ],
-        SIGNERS[0],
+        daoSigner(),
       ).result,
     ).toBeOk(Cl.uint(0));
 
-    const order = samples(fc.constantFrom(0, 1, 2), 6);
+    const order = samples(fc.constant(0), 6);
     const approved = new Set<number>();
     for (const signerIndex of order) {
       const response = simnet.callPublicFn(
         DAO,
         "approve-proposal",
         [Cl.uint(0)],
-        SIGNERS[signerIndex]!,
+        daoSigner(),
       );
       if (approved.has(signerIndex)) {
         expect(response.result).toBeErr(Cl.uint(103));
@@ -329,7 +328,7 @@ describe("contract fuzz invariants", () => {
         simnet.callReadOnlyFn(
           DAO,
           "has-approved",
-          [Cl.uint(0), Cl.principal(SIGNERS[signerIndex]!)],
+          [Cl.uint(0), Cl.principal(daoSigner())],
           outsider,
         ).result,
       ).toBeBool(true);

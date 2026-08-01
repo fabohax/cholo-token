@@ -151,9 +151,12 @@ pruebas locales; no debe incluirse en despliegues públicos.
 ## Tesorería de la DAO
 
 `cholo-dao.clar` es una tesorería multifirma gestionada mediante propuestas.
-Comienza con cinco firmantes y, de forma predeterminada, utiliza un cuórum del
-51 % redondeado hacia arriba. Con cinco firmantes se requieren tres
-aprobaciones.
+Comienza con la cuenta que despliega el contrato como único firmante y un
+cuórum inicial de una aprobación. El conjunto crece orgánicamente mediante
+propuestas `add-signer`; a medida que se incorporan firmantes, el cuórum
+predeterminado se calcula como el 51 % redondeado hacia arriba. Todos los
+cambios posteriores de firmantes y cuórum pasan por el mismo proceso de
+propuesta, aprobación y demora de ejecución.
 
 La demora de ejecución predeterminada es de 10 bloques de Stacks, contados
 desde la creación de la propuesta. Las propuestas deben vencer entre 10 y
