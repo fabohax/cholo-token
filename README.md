@@ -6,7 +6,7 @@ Bitcoin.
 
 $CHOLO toma su identidad del perro peruano sin pelo —símbolo cultural del
 Perú— y combina la cultura meme con una misión de código abierto enfocada en
-bienes públicos, DeSci, investigación y desarrollo, y proyectos liderados por
+bienes públicos, GameFi, DeSci y proyectos liderados por
 la comunidad.
 
 > Conoce más en [cholo.meme](https://cholo.meme/).
