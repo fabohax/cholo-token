@@ -69,16 +69,12 @@ describe("cholo-swap", () => {
 
   it("rejects a non-sBTC token passed to the sBTC entry point", () => {
     const { buyer, deployer } = setup();
-    expect(
-      simnet.callPublicFn("mock-token", "mint", [Cl.uint(1_000), Cl.principal(buyer)], deployer)
-        .result,
-    ).toBeOk(Cl.bool(true));
 
     expect(
       simnet.callPublicFn(
         SWAP,
         "buy-with-sbtc",
-        [Cl.uint(1_000), Cl.uint(2_000), Cl.contractPrincipal(deployer, "mock-token")],
+        [Cl.uint(1_000), Cl.uint(2_000), Cl.contractPrincipal(deployer, "cholo")],
         buyer,
       ).result,
     ).toBeErr(Cl.uint(205));
@@ -86,16 +82,12 @@ describe("cholo-swap", () => {
 
   it("rejects a non-USDCx token passed to the USDCx entry point", () => {
     const { buyer, deployer } = setup();
-    expect(
-      simnet.callPublicFn("mock-token", "mint", [Cl.uint(100), Cl.principal(buyer)], deployer)
-        .result,
-    ).toBeOk(Cl.bool(true));
 
     expect(
       simnet.callPublicFn(
         SWAP,
         "buy-with-usdcx",
-        [Cl.uint(100), Cl.uint(5_000), Cl.contractPrincipal(deployer, "mock-token")],
+        [Cl.uint(100), Cl.uint(5_000), Cl.contractPrincipal(deployer, "cholo")],
         buyer,
       ).result,
     ).toBeErr(Cl.uint(205));

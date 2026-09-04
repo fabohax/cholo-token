@@ -15,4 +15,11 @@ plan:
             path: contracts/cholo.clar
             anchor-block-only: true
             clarity-version: 2
+        - contract-publish:
+            contract-name: cholo-dao
+            expected-sender: SPXMZRVQD975VV059PHT95JN4ADFVVJCTWR3K6WV
+            cost: 143800
+            path: contracts/cholo-dao.clar
+            anchor-block-only: true
+            clarity-version: 2
       epoch: "2.4"
