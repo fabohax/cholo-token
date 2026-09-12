@@ -70,6 +70,11 @@ plan:
             path: contracts/cholo-dao.clar
             clarity-version: 2
         - emulated-contract-publish:
+            contract-name: cholo-lock
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/cholo-lock.clar
+            clarity-version: 2
+        - emulated-contract-publish:
             contract-name: cholo-swap
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/cholo-swap.clar

@@ -1,0 +1,46 @@
+{
+  "checkedAt": "2026-09-12T15:54:10.443Z",
+  "api": "https://api.mainnet.hiro.so",
+  "contract": "SP193GXQTNHVV9WSAPHAB89M6R9QSEXZKS3774CMD.cholo-dao",
+  "stacksTipHeight": 8974497,
+  "tenureHeight": 255732,
+  "sourceMatches": true,
+  "localSha256": "5d977a77f51a39b55607ec644008bdfdb82efc5c14ce1e5a76bb59b2cd198968",
+  "deployedSha256": "5d977a77f51a39b55607ec644008bdfdb82efc5c14ce1e5a76bb59b2cd198968",
+  "publishHeight": 8933928,
+  "deploymentTx": "0x54f119f74129bce5ae0b7e1d25421aeb4eb3a78578a9f02fbad436669937a01b",
+  "deploymentStatus": "success",
+  "canonical": true,
+  "clarityVersion": 2,
+  "signerCount": 1,
+  "signers": [
+    "(some SP193GXQTNHVV9WSAPHAB89M6R9QSEXZKS3774CMD)"
+  ],
+  "quorum": "u1",
+  "executionDelay": "u10",
+  "governanceVersion": "u0",
+  "treasury": {
+    "stx": {
+      "balance": "0",
+      "total_miner_rewards_received": "0",
+      "lock_tx_id": "",
+      "locked": "0",
+      "lock_height": 0,
+      "burnchain_lock_height": 0,
+      "burnchain_unlock_height": 0,
+      "estimated_balance": "0",
+      "pending_balance_inbound": "0",
+      "pending_balance_outbound": "0",
+      "total_sent": "0",
+      "total_received": "0",
+      "total_fees_sent": "0"
+    },
+    "fungibleTokens": {
+      "SP193GXQTNHVV9WSAPHAB89M6R9QSEXZKS3774CMD.cholo::cholo": {
+        "balance": "380387300000000001",
+        "total_sent": "0",
+        "total_received": "380387300000000001"
+      }
+    }
+  }
+}

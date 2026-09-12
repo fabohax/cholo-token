@@ -1,4 +1,6 @@
 ---
+# HISTORICAL: cholo-dao is already deployed at expected-sender.
+# Do not reapply. See docs/dao-mainnet.md and npm run verify:dao:mainnet.
 id: 0
 name: Mainnet deployment
 network: mainnet
@@ -9,15 +11,9 @@ plan:
     - id: 0
       transactions:
         - contract-publish:
-            contract-name: cholo
-            expected-sender: SPXMZRVQD975VV059PHT95JN4ADFVVJCTWR3K6WV
-            cost: 735384
-            path: contracts/cholo.clar
-            anchor-block-only: true
-            clarity-version: 2
-        - contract-publish:
             contract-name: cholo-dao
-            expected-sender: SPXMZRVQD975VV059PHT95JN4ADFVVJCTWR3K6WV
+            expected-sender: SP193GXQTNHVV9WSAPHAB89M6R9QSEXZKS3774CMD
+            # Re-estimate before signing: source size changed; this is not a live quote.
             cost: 143800
             path: contracts/cholo-dao.clar
             anchor-block-only: true

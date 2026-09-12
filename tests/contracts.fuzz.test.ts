@@ -451,7 +451,7 @@ describe("contract fuzz invariants", () => {
         daoSigner(),
       );
 
-      if (ttl >= 10 && ttl <= 10_000) {
+      if (ttl > 10 && ttl <= 10_000) {
         expect(response.result).toBeOk(Cl.uint(nextId));
         nextId += 1n;
       } else {
@@ -480,7 +480,7 @@ describe("contract fuzz invariants", () => {
           Cl.stringUtf8("fuzz approvals"),
           Cl.uint(expiration),
           Cl.none(),
-          Cl.some(Cl.uint(0)),
+          Cl.some(Cl.uint(1)),
         ],
         daoSigner(),
       ).result,
@@ -506,7 +506,7 @@ describe("contract fuzz invariants", () => {
     expect(
       simnet.callPublicFn(DAO, "approve-proposal", [Cl.uint(0)], outsider).result,
     ).toBeErr(Cl.uint(100));
-    for (const signerIndex of approved) {
+    if (approved.size > 0) {
       expect(
         simnet.callReadOnlyFn(
           DAO,
@@ -592,7 +592,7 @@ describe("contract fuzz invariants", () => {
       const oldSigner = item.includeOldSigner ? currentSigner : undefined;
       const token = item.includeToken ? tokenPrincipal : undefined;
       const newRequired = item.includeNewRequired ? 1n : undefined;
-      const newDelay = item.includeNewDelay ? 0n : undefined;
+      const newDelay = item.includeNewDelay ? 1n : undefined;
       const response = simnet.callPublicFn(
         DAO,
         "create-proposal",

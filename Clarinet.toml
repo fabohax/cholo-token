@@ -24,3 +24,8 @@ epoch = 2.4
 path = "contracts/cholo-swap.clar"
 clarity_version = 2
 epoch = 2.4
+
+[contracts.cholo-lock]
+path = "contracts/cholo-lock.clar"
+clarity_version = 2
+epoch = 2.4

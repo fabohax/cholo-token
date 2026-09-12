@@ -13,15 +13,16 @@ la comunidad.
 
 ## Descripción del repositorio
 
-Este proyecto de Clarinet contiene tres contratos principales en Clarity:
+Este proyecto de Clarinet contiene cuatro contratos principales en Clarity:
 
 | Contrato | Propósito |
 | --- | --- |
 | [`cholo.clar`](contracts/cholo.clar) | Token fungible compatible con SIP-010, con suministro fijo, transferencias, administración del propietario y metadatos. |
 | [`cholo-dao.clar`](contracts/cholo-dao.clar) | Tesorería multifirma para la DAO, con propuestas, aprobaciones de firmantes, vencimiento, demora de ejecución, transferencias de STX y SIP-010, y administración del cuórum y los firmantes. |
 | [`cholo-swap.clar`](contracts/cholo-swap.clar) | Venta de CHOLO respaldada por inventario, con pagos en STX, sBTC o USDCx. |
+| [`cholo-lock.clar`](contracts/cholo-lock.clar) | Bloqueo temporal de STX con destinatario y etiqueta inmutables. |
 
-El repositorio también incluye una suite de pruebas para la DAO y el swap,
+El repositorio también incluye una suite de pruebas para la DAO, el swap y el bloqueo temporal,
 basada en Vitest y Clarinet SDK.
 
 ## Contrato del token
@@ -158,9 +159,20 @@ predeterminado se calcula como el 51 % redondeado hacia arriba. Todos los
 cambios posteriores de firmantes y cuórum pasan por el mismo proceso de
 propuesta, aprobación y demora de ejecución.
 
-La demora de ejecución predeterminada es de 10 bloques de Stacks, contados
-desde la creación de la propuesta. Las propuestas deben vencer entre 10 y
-10 000 bloques después de su creación.
+La demora predeterminada es de 10 tenures, contados desde la aprobación que
+alcanza el cuórum. Clarity 2 usa `block-height`, que desde Nakamoto representa
+la altura de tenure, no la altura de los bloques rápidos de Stacks.
+La demora configurable admite de 1 a 1000 tenures. El vencimiento debe estar
+entre 10 y 10 000 tenures desde la creación y permitir completar la demora;
+las aprobaciones que ya no dejan tiempo suficiente se rechazan.
+No hay excepción de demora para el primer `add-signer`.
+
+Cada cambio de firmantes, cuórum o demora invalida las propuestas pendientes:
+deben crearse y aprobarse nuevamente. Las aprobaciones antiguas se conservan
+como historial, pero no autorizan nuevas ejecuciones. No se permite eliminar
+un firmante si el cuórum fijo supera el número restante.
+Crear propuestas, aprobarlas y depositar STX requiere llamadas directas;
+la ejecución de propuestas aprobadas sigue siendo pública.
 
 ### Tipos de propuesta compatibles
 
@@ -179,7 +191,7 @@ desde la creación de la propuesta. Las propuestas deben vencer entre 10 y
 1. Un firmante activo llama a `create-proposal`.
 2. Los firmantes llaman a `approve-proposal` antes de que venza la propuesta.
 3. La propuesta alcanza el cuórum configurado.
-4. Transcurre la demora de ejecución medida desde la creación de la propuesta.
+4. Transcurre la demora de ejecución medida desde que se alcanza el cuórum.
 5. `execute-proposal` realiza la acción y marca definitivamente la propuesta
    como ejecutada.
 
@@ -213,6 +225,9 @@ principal del contrato de la DAO.
 | `get-signer` | Busca un firmante por su índice. |
 | `has-approved` | Comprueba si un firmante aprobó una propuesta. |
 | `get-proposal` | Devuelve una propuesta almacenada a partir de su ID. |
+| `get-execution-delay` | Demora actual en tenures. |
+| `get-governance-version` | Versión actual de la configuración de gobernanza. |
+| `get-executable-at` | Altura de ejecución mínima registrada al alcanzar cuórum. |
 
 ## Desarrollo
 
@@ -300,15 +315,34 @@ npx tsc --noEmit
 
 ## Despliegue
 
+**DAO ya publicada en mainnet:** el 12 de septiembre de 2026 se verificó que
+el código desplegado coincide exactamente con el archivo local. No volver a
+aplicar el plan de publicación. Consultar la [guía de puesta en operación](docs/dao-mainnet.md)
+y ejecutar `npm run verify:dao:mainnet` para actualizar el estado público.
+La DAO ya tiene saldo CHOLO y mantiene el deployer como único firmante;
+queda pendiente configurar la gobernanza definitiva.
+
 Los planes de despliegue de Clarinet se encuentran en `deployments/`. Antes de
 transmitirlos, revisa los emisores esperados, los puntos de conexión de la red,
 las comisiones, el orden de los contratos y las transacciones generadas.
 
-Los planes actuales de mainnet y testnet solo publican `cholo.clar`. Regenera o
-actualiza estos planes antes de desplegar `cholo-dao.clar` o
-`cholo-swap.clar`. El token CHOLO debe publicarse antes que el swap porque este
-último realiza llamadas estáticas a `.cholo`. No incluyas `mock-token.clar` en
-un despliegue público.
+El plan de mainnet publica únicamente `cholo-dao`; no vuelve a publicar el
+token existente. El emisor configurado es
+`SP193GXQTNHVV9WSAPHAB89M6R9QSEXZKS3774CMD`, el mismo emisor del token
+publicado que figura arriba y la cartera que administrará el bootstrap.
+La DAO acepta el principal del token en cada propuesta y no depende de `.cholo`.
+
+Antes de transmitir: verificar el emisor con la cartera, financiarlo para las
+comisiones, recalcular la comisión para el código actualizado y revisar las
+transacciones firmadas. La comisión guardada es una referencia antigua, no
+una cotización vigente. El campo epoch 2.4 refleja el contrato Clarity 2;
+probar además su comportamiento de tenures en Nakamoto.
+No incluir `mock-token.clar` en despliegues públicos.
+
+Antes de financiar la DAO, agregar los firmantes definitivos mediante
+propuestas (incluyendo la demora), comprobar sus índices y fijar el cuórum
+acordado. Cada cambio invalida otras propuestas pendientes. Verificar con
+transferencias pequeñas de STX y del token real antes de depositar la tesorería.
 
 Después del despliegue, y antes de habilitar compras:
 
@@ -351,6 +385,8 @@ el swap.
 | `u106` | Se alcanzó el número mínimo de firmantes |
 | `u107` | Parámetros no válidos o bloqueo temporal aún vigente |
 | `u108` | Tipo de propuesta desconocido |
+| `u109` | Propuesta invalidada por un cambio de gobernanza |
+| `u110` | Llamada indirecta no autorizada |
 
 ### Swap
 
@@ -391,3 +427,41 @@ Los contratos inteligentes pueden contener errores y las transacciones en
 blockchain son irreversibles. Revisa el código, verifica las direcciones de los
 contratos y comprende los riesgos antes de interactuar con cualquier
 despliegue.
+
+## Bloqueo temporal de STX
+
+`cholo-lock.clar` custodia STX hasta una altura de Bitcoin determinada. Cada
+bloqueo conserva depositante, destinatario, monto, etiqueta UTF-8 (máximo 64
+caracteres), altura inicial, altura de liberación y estado de pago.
+
+- `lock-funds(amount, duration, recipient, tag)` transfiere micro-STX del
+  depositante al contrato y devuelve `(ok id)`, empezando por `u0`. El monto y
+  la duración deben ser positivos. Solo admite llamadas directas.
+- `release(id)` permite que cualquiera active el pago completo al destinatario
+  registrado cuando `burn-block-height >= unlock-at`. Solo puede pagarse una vez.
+- `get-lock(id)`, `get-next-id()` y `get-current-height()` consultan los registros,
+  el próximo identificador y la altura de Bitcoin utilizada por el contrato.
+
+La duración se expresa en bloques de Bitcoin, no en segundos: `u144` equivale
+aproximadamente a un día, sin garantizar una hora exacta. Véase la referencia de
+[`burn-block-height`](https://docs.stacks.co/reference/clarity/keywords).
+No existe pago automático: alguien debe enviar la transacción `release` después
+del vencimiento. No hay cancelación, retiro anticipado, cambio de destinatario,
+edición de etiqueta ni privilegios del administrador. Se permiten etiquetas
+vacías o repetidas y reembolsos al mismo depositante. El contrato solo recibe
+STX mediante esta API; no ofrece bloqueo de CHOLO ni de otros tokens SIP-010.
+Los STX enviados directamente al contrato no crean un bloqueo recuperable.
+
+Ejemplo en la consola de Clarinet (sustituye el destinatario):
+
+```clarity
+(contract-call? .cholo-lock lock-funds u1000000 u144 'ST_DESTINATARIO u"reserva")
+(contract-call? .cholo-lock get-lock u0)
+;; Después de alcanzar unlock-at:
+(contract-call? .cholo-lock release u0)
+```
+
+Errores propios: `u100` parámetros inválidos, `u101` bloqueo inexistente,
+`u102` plazo pendiente, `u103` ya pagado y `u104` llamada indirecta.
+Los errores de transferencia STX se propagan sin consumir el identificador
+ni modificar el bloqueo.

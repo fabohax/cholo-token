@@ -1,0 +1,49 @@
+{
+  "preparedAt": "2026-09-12T16:16:26.013Z",
+  "status": "prepared-not-submitted",
+  "network": "mainnet",
+  "contract": "SP193GXQTNHVV9WSAPHAB89M6R9QSEXZKS3774CMD.cholo-dao",
+  "sender": "SP193GXQTNHVV9WSAPHAB89M6R9QSEXZKS3774CMD",
+  "newSigner": "SP1N4FTM6XK4FS4KQGZBTJY70F4CR36WQET7JFSS7",
+  "functionName": "create-proposal",
+  "functionArgs": [
+    "0x0516523876faac77b4f32ab454b42686c26f9777f3c8",
+    "0x0100000000000000000000000000000000",
+    "0x0d0000000a6164642d7369676e6572",
+    "0x0a05166a47ea86ecc8fc927787d7a978e07919819b9776",
+    "0x09",
+    "0x09",
+    "0x0e00000034416464207369676e6572205350314e3446544d36584b344653344b51475a42544a59373046344352333657514554374a46535337",
+    "0x010000000000000000000000000003e8e9",
+    "0x09",
+    "0x09"
+  ],
+  "clarityArgs": [
+    "SP193GXQTNHVV9WSAPHAB89M6R9QSEXZKS3774CMD",
+    "u0",
+    "\"add-signer\"",
+    "(some SP1N4FTM6XK4FS4KQGZBTJY70F4CR36WQET7JFSS7)",
+    "none",
+    "none",
+    "u\"Add signer SP1N4FTM6XK4FS4KQGZBTJY70F4CR36WQET7JFSS7\"",
+    "u256233",
+    "none",
+    "none"
+  ],
+  "postConditionMode": "deny",
+  "postConditions": [],
+  "expiration": 256233,
+  "executionDelay": "u10",
+  "expectedAfterExecution": {
+    "signerCount": 2,
+    "requiredApprovals": 2
+  },
+  "nextSteps": [
+    "Refresh this file before signing; review fee and nonce in the wallet.",
+    "Submit create-proposal directly from sender; save the returned proposal ID.",
+    "After confirmed success, approve-proposal(ID) directly from sender.",
+    "Read get-executable-at(ID); wait until tenure height reaches it.",
+    "Before expiration, execute-proposal(ID, none), with deny postconditions and no asset transfers.",
+    "Verify is-signer(newSigner), get-signer-count = u2 and get-required-sigs = u2."
+  ]
+}

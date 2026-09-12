@@ -5,6 +5,8 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "verify:dao:mainnet": "node scripts/verify-dao-mainnet.mjs",
+    "prepare:dao:signer": "node scripts/prepare-dao-signer.mjs",
     "test": "vitest run",
     "test:fuzz": "vitest run tests/contracts.fuzz.test.ts",
     "test:report": "vitest run -- --coverage --costs",
